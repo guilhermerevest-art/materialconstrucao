@@ -1,11 +1,16 @@
+import type { Client } from './types';
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  /** Cadastros que já usam o mesmo valor quando o conflito é de unicidade. */
+  readonly conflicts?: Client[];
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, conflicts?: Client[]) {
     super(message);
     this.status = status;
     this.code = code;
+    this.conflicts = conflicts;
   }
 }
 
@@ -33,10 +38,14 @@ export async function api<T>(path: string, options: { method?: Method; body?: un
   }
 
   if (res.status === 204) return undefined as T;
-  const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+  const data = (await res.json().catch(() => null)) as {
+    error?: string;
+    code?: string;
+    conflicts?: Client[];
+  } | null;
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
-    throw new ApiError(data?.error ?? `Erro ${res.status}. Tente de novo.`, res.status, data?.code);
+    throw new ApiError(data?.error ?? `Erro ${res.status}. Tente de novo.`, res.status, data?.code, data?.conflicts);
   }
   return data as T;
 }

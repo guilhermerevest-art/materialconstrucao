@@ -5,17 +5,20 @@ import { ZodError } from 'zod';
 export class HttpError extends Error {
   readonly status: number;
   readonly code?: string;
+  readonly details?: unknown;
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, details?: unknown) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
 const UNIQUE_MESSAGES: Record<string, string> = {
   users_email_key: 'Já existe um usuário com este e-mail.',
   products_code_key: 'Já existe um produto com este código.',
+  clients_whatsapp_key: 'Já existe um cliente com este WhatsApp.',
 };
 
 const IN_USE_MESSAGES: Record<string, string> = {
@@ -49,9 +52,20 @@ function databaseErrorResponse(err: pg.DatabaseError): { status: number; message
   }
 }
 
+/**
+ * Campos extras da resposta. Um objeto vira campos de topo (`{ conflicts }` sai como
+ * `conflicts`), que é o que o navegador lê; qualquer outro valor vai agrupado em `details`.
+ */
+function extraFields(details: unknown): Record<string, unknown> {
+  if (details === undefined) return {};
+  if (details === null || typeof details !== 'object' || Array.isArray(details)) return { details };
+  return { ...details };
+}
+
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof HttpError) {
-    res.status(err.status).json({ error: err.message, code: err.code });
+    const extra = extraFields(err.details);
+    res.status(err.status).json({ ...extra, error: err.message, code: err.code });
     return;
   }
   if (err instanceof ZodError) {

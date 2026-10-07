@@ -450,4 +450,90 @@ describeDb('API com banco de teste', () => {
       expect(res.body.error).toBe('Selecione a loja do vendedor.');
     });
   });
+
+  describe('WhatsApp único por cliente', () => {
+    async function totalClientes() {
+      const { rows } = await pool.query<{ total: number }>('select count(*)::int as total from clients');
+      return rows[0]!.total;
+    }
+
+    it('recusa cadastrar um WhatsApp que já pertence a outro cliente', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const before = await totalClientes();
+
+      const res = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5511987654321' });
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ error: 'Este WhatsApp já está cadastrado.', code: 'whatsapp_duplicado' });
+      expect(res.body.conflicts).toEqual([
+        { id: f.clientId, name: 'Maria da Silva', whatsapp: '5511987654321', created_at: expect.any(String) },
+      ]);
+      expect(Object.keys(res.body.conflicts[0]).sort()).toEqual(['created_at', 'id', 'name', 'whatsapp']);
+      // A recusa acontece antes do insert: nada foi gravado.
+      expect(await totalClientes()).toBe(before);
+    });
+
+    it('continua cadastrando quem tem WhatsApp livre', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const res = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '(34) 99711-1276' });
+      expect(res.status).toBe(201);
+      expect(res.body.client).toMatchObject({ name: 'Marcos', whatsapp: '5534997111276' });
+      expect(await totalClientes()).toBe(2);
+    });
+
+    it('recusa editar para o WhatsApp de outro cliente e aponta quem é o dono', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const outro = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5534997111276' });
+      expect(outro.status).toBe(201);
+
+      const res = await seller
+        .put(`/api/clients/${f.clientId}`)
+        .send({ name: 'Maria da Silva', whatsapp: '+55 34 99711 1276' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('whatsapp_duplicado');
+      expect(res.body.conflicts).toEqual([
+        { id: outro.body.client.id, name: 'Marcos', whatsapp: '5534997111276', created_at: expect.any(String) },
+      ]);
+      // O cadastro original continua com o número dele.
+      const kept = await seller.get(`/api/clients/${f.clientId}`);
+      expect(kept.body.client.whatsapp).toBe('5511987654321');
+    });
+
+    it('deixa editar o nome sem apagar o próprio WhatsApp', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const res = await seller.put(`/api/clients/${f.clientId}`).send({ name: 'Maria Souza', whatsapp: '5511987654321' });
+      expect(res.status).toBe(200);
+      expect(res.body.client).toMatchObject({ id: f.clientId, name: 'Maria Souza', whatsapp: '5511987654321' });
+    });
+
+    it('deixa trocar para um WhatsApp livre', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const res = await seller
+        .put(`/api/clients/${f.clientId}`)
+        .send({ name: 'Maria da Silva', whatsapp: '(34) 99711-1276' });
+      expect(res.status).toBe(200);
+      expect(res.body.client).toMatchObject({ id: f.clientId, whatsapp: '5534997111276' });
+    });
+
+    it('trata duas formas do mesmo número como o mesmo cliente', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      expect((await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5534997111276' })).status).toBe(201);
+
+      const res = await seller.post('/api/clients').send({ name: 'Marcos outro', whatsapp: '(34) 99711-1276' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('whatsapp_duplicado');
+      expect(res.body.conflicts).toHaveLength(1);
+      expect(res.body.conflicts[0].whatsapp).toBe('5534997111276');
+      expect(await totalClientes()).toBe(2);
+    });
+
+    it('editar um id inexistente responde 404 mesmo com o número de outra pessoa', async () => {
+      const seller = await login(app, 'vendedor.a@teste.local');
+      const before = await totalClientes();
+
+      const res = await seller.put('/api/clients/999999').send({ name: 'Fantasma', whatsapp: '5511987654321' });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBeUndefined();
+      expect(await totalClientes()).toBe(before);
+    });
+  });
 });

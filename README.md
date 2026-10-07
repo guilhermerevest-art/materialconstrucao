@@ -77,6 +77,11 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 - Sem trava de estoque (V1).
 - WhatsApp do cliente é guardado só com dígitos e DDI (`(11) 98765-4321` vira `5511987654321`).
   Número de outro país deve começar com `+`.
+- **O mesmo WhatsApp não pode ficar em dois cadastros de cliente.** Ao salvar um número que
+  outro cliente já usa, nada é gravado: o sistema mostra os cadastros que já têm aquele número e
+  o vendedor escolhe qual usar (ou volta e corrige o número). O índice único no banco garante a
+  regra mesmo quando duas pessoas salvam ao mesmo tempo — a segunda recebe o aviso em vez de criar
+  a duplicata.
 - Produto usado em pedidos não pode ser excluído; desative-o para tirá-lo da busca.
 
 ## Banco na VPS

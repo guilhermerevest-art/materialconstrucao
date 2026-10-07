@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
@@ -7,6 +8,7 @@ import type { Client } from '@/lib/types';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Field, Input } from './ui/input';
+import { Alert } from './ui/misc';
 
 /** Cadastro e edição de cliente. Usado na tela de clientes e no PDV (cadastro rápido). */
 export function ClientFormDialog({
@@ -26,12 +28,14 @@ export function ClientFormDialog({
   const [name, setName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<Client[] | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setName(client?.name ?? initialValues?.name ?? '');
     setWhatsapp(client ? formatWhatsapp(client.whatsapp) : (initialValues?.whatsapp ?? ''));
     setError(null);
+    setConflicts(null);
     // Só ao abrir: os valores iniciais não devem sobrescrever o que está sendo digitado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -49,7 +53,15 @@ export function ClientFormDialog({
       onSaved?.(saved);
       onOpenChange(false);
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível salvar o cliente.'),
+    onError: (err) => {
+      // Só vira painel quando o servidor devolveu os cadastros em conflito; corrida no índice único vem sem eles.
+      if (err instanceof ApiError && err.code === 'whatsapp_duplicado' && err.conflicts?.length) {
+        setError(null);
+        setConflicts(err.conflicts);
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : 'Não foi possível salvar o cliente.');
+    },
   });
 
   function submit(event: FormEvent) {
@@ -59,6 +71,50 @@ export function ClientFormDialog({
     if (!whatsapp.trim()) return setError('Informe o WhatsApp do cliente.');
     setError(null);
     mutation.mutate();
+  }
+
+  /** Reaproveita um cadastro já existente: nada é salvo, o pedido passa a usar o cliente que já estava lá. */
+  function useExisting(existing: Client) {
+    queryClient.invalidateQueries({ queryKey: ['clients'] });
+    toast.success(`Usando o cadastro de ${existing.name}.`);
+    onSaved?.(existing);
+    onOpenChange(false);
+  }
+
+  if (conflicts) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Este WhatsApp já está cadastrado</DialogTitle>
+            <DialogDescription>Este número já pertence a outro cliente. Escolha qual cadastro usar.</DialogDescription>
+          </DialogHeader>
+          <Alert variant="danger" icon={<TriangleAlert />} title="Nada foi salvo ainda.">
+            <ul className="mt-1 grid gap-2">
+              {conflicts.map((existing) => (
+                <li
+                  key={existing.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{existing.name}</p>
+                    <p className="text-[13px] text-muted-foreground tabular-nums">{formatWhatsapp(existing.whatsapp)}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => useExisting(existing)}>
+                    Usar este cadastro
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Alert>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConflicts(null)}>
+              Voltar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
   return (
