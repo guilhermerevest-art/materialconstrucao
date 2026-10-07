@@ -34,13 +34,17 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const login = useLogin();
-  const [email, setEmail] = useState('');
+  const [tenantSlug, setTenantSlug] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    login.mutate({ email, password }, { onSuccess: () => navigate(from, { replace: true }) });
+    login.mutate(
+      { tenant_slug: tenantSlug.trim().toLowerCase(), username: username.trim().toLowerCase(), password },
+      { onSuccess: () => navigate(from, { replace: true }) },
+    );
   }
 
   const error = login.error instanceof ApiError ? login.error.message : login.error ? 'Não foi possível entrar.' : null;
@@ -50,16 +54,27 @@ export function LoginPage() {
       <h1 className="text-lg font-semibold">Entrar</h1>
       <form onSubmit={submit} className="mt-5 grid gap-4">
         {error && <Alert variant="danger" title={error} />}
-        <Field label="E-mail" htmlFor="email">
+        <Field label="Lojamestre" htmlFor="tenant">
           <Input
-            id="email"
-            type="email"
-            autoComplete="username"
-            inputMode="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            id="tenant"
+            type="text"
+            autoComplete="organization"
+            value={tenantSlug}
+            onChange={(e) => setTenantSlug(e.target.value)}
             required
             autoFocus
+            spellCheck={false}
+          />
+        </Field>
+        <Field label="Usuário" htmlFor="username">
+          <Input
+            id="username"
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            spellCheck={false}
           />
         </Field>
         <Field label="Senha" htmlFor="senha">

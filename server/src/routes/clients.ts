@@ -61,7 +61,7 @@ async function writeClient(
     return await save();
   } catch (err) {
     if ((err as { code?: string; constraint?: string }).code !== '23505') throw err;
-    if ((err as { constraint?: string }).constraint !== 'clients_whatsapp_key') throw err;
+    if ((err as { constraint?: string }).constraint !== 'clients_tenant_whatsapp_key') throw err;
     const conflicts = await findWhatsappConflicts(ctx, whatsapp, ignoreId);
     throw conflicts.length ? duplicateWhatsapp(conflicts) : err;
   }

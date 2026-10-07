@@ -117,7 +117,10 @@ export function setupApp(databaseUrl: string) {
   // chama um segundo pool (admin) só para isso.
   // O loginPool conecta com oms_login, que tem BYPASSRLS mas só pode chamar
   // find_login — usado só no /auth/login.
-  const adminPool = createPool(databaseUrl);
+  // adminPool conecta como postgres (dono do schema public) para poder dropar
+  // e recriar o schema entre os testes. A app e o login conectam com roles
+  // sem superuser/bypassrls para que o RLS seja aplicado de verdade.
+  const adminPool = createPool(databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//postgres:postgres@'));
   const appUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_app:oms_app@');
   const loginUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_login:oms_login@');
   const pool = createPool(appUrl);
