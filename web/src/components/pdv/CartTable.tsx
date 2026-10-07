@@ -80,56 +80,99 @@ export function CartTable({
   }
 
   return (
-    <Table>
-      <THead>
-        <TR>
-          <TH className="w-10 pl-5">#</TH>
-          <TH>Produto</TH>
-          <TH className="w-14 text-center">Un.</TH>
-          <TH className="w-28 text-right">Qtd.</TH>
-          <TH className="w-28 text-right">Preço unit.</TH>
-          <TH className="w-32 text-right">Subtotal</TH>
-          <TH className="w-14 pr-5">
-            <span className="sr-only">Remover</span>
-          </TH>
-        </TR>
-      </THead>
-      <TBody>
+    <>
+      {/* Mobile: cards empilhados para caber em tela estreita sem scroll horizontal. */}
+      <ul className="grid gap-2 px-4 pb-4 sm:hidden">
         {items.map((item, index) => (
-          <TR key={item.product_id} className={cn(index % 2 === 1 && 'bg-background/50')}>
-            <TD className="pl-5 text-muted-foreground tabular-nums">{index + 1}</TD>
-            <TD className="py-2">
-              <p className="font-medium">{item.name}</p>
-              {item.code && <p className="text-xs text-muted-foreground">{item.code}</p>}
-            </TD>
-            <TD className="text-center text-muted-foreground">{item.unit}</TD>
-            <TD className="text-right">
-              <div className="flex justify-end">
-                <QuantityInput
-                  value={item.quantity}
-                  label={`Quantidade de ${item.name}`}
-                  onCommit={(quantity) => onQuantityChange(item.product_id, quantity)}
-                />
-              </div>
-            </TD>
-            <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
-            <TD className="text-right font-semibold tabular-nums">
-              {centsToMoney(lineTotalCents(item.unit_price, item.quantity))}
-            </TD>
-            <TD className="pr-5 text-right">
-              <Button
-                variant="destructive-ghost"
-                size="icon"
-                className="size-8"
-                onClick={() => onRemove(item.product_id)}
-                aria-label={`Remover ${item.name}`}
-              >
-                <Trash2 />
-              </Button>
-            </TD>
-          </TR>
+          <li
+            key={item.product_id}
+            className={cn(
+              'grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 rounded-md border border-border bg-card p-3',
+              index % 2 === 1 && 'bg-background/50',
+            )}
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium">{item.name}</p>
+              {item.code && <p className="truncate text-xs text-muted-foreground">{item.code}</p>}
+              <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                {item.quantity} {item.unit} × {formatMoney(item.unit_price)}
+              </p>
+            </div>
+            <Button
+              variant="destructive-ghost"
+              size="icon"
+              className="size-8 self-start"
+              onClick={() => onRemove(item.product_id)}
+              aria-label={`Remover ${item.name}`}
+            >
+              <Trash2 />
+            </Button>
+            <div className="col-span-2 flex items-center justify-between border-t border-border pt-2">
+              <QuantityInput
+                value={item.quantity}
+                label={`Quantidade de ${item.name}`}
+                onCommit={(quantity) => onQuantityChange(item.product_id, quantity)}
+              />
+              <span className="text-right font-semibold tabular-nums">
+                {centsToMoney(lineTotalCents(item.unit_price, item.quantity))}
+              </span>
+            </div>
+          </li>
         ))}
-      </TBody>
-    </Table>
+      </ul>
+
+      {/* sm em diante: tabela tradicional. */}
+      <Table className="hidden sm:table">
+        <THead>
+          <TR>
+            <TH className="w-10 pl-5">#</TH>
+            <TH>Produto</TH>
+            <TH className="w-14 text-center">Un.</TH>
+            <TH className="w-28 text-right">Qtd.</TH>
+            <TH className="w-28 text-right">Preço unit.</TH>
+            <TH className="w-32 text-right">Subtotal</TH>
+            <TH className="w-14 pr-5">
+              <span className="sr-only">Remover</span>
+            </TH>
+          </TR>
+        </THead>
+        <TBody>
+          {items.map((item, index) => (
+            <TR key={item.product_id} className={cn(index % 2 === 1 && 'bg-background/50')}>
+              <TD className="pl-5 text-muted-foreground tabular-nums">{index + 1}</TD>
+              <TD className="py-2">
+                <p className="font-medium">{item.name}</p>
+                {item.code && <p className="text-xs text-muted-foreground">{item.code}</p>}
+              </TD>
+              <TD className="text-center text-muted-foreground">{item.unit}</TD>
+              <TD className="text-right">
+                <div className="flex justify-end">
+                  <QuantityInput
+                    value={item.quantity}
+                    label={`Quantidade de ${item.name}`}
+                    onCommit={(quantity) => onQuantityChange(item.product_id, quantity)}
+                  />
+                </div>
+              </TD>
+              <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
+              <TD className="text-right font-semibold tabular-nums">
+                {centsToMoney(lineTotalCents(item.unit_price, item.quantity))}
+              </TD>
+              <TD className="pr-5 text-right">
+                <Button
+                  variant="destructive-ghost"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => onRemove(item.product_id)}
+                  aria-label={`Remover ${item.name}`}
+                >
+                  <Trash2 />
+                </Button>
+              </TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+    </>
   );
 }

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { currentUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import { withSession } from '../db/session.js';
 import { optionalText, parseId } from '../lib/validation.js';
 
 const storeSchema = z.object({
@@ -67,25 +69,33 @@ export function storesRouter(ctx: AppContext) {
   });
 
   router.post('/', async (req, res) => {
+    const me = currentUser(req);
     const body = storeSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `with inserted as (insert into stores (name, address, phone) values ($1, $2, $3) returning *)
-       select ${STORE_COLUMNS} from inserted s`,
-      [body.name, body.address, body.phone],
-    );
-    res.status(201).json({ store: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `with inserted as (insert into stores (tenant_id, name, address, phone) values ($1, $2, $3, $4) returning *)
+         select ${STORE_COLUMNS} from inserted s`,
+        [me.tenant_id, body.name, body.address, body.phone],
+      );
+      return rows[0];
+    });
+    res.status(201).json({ store: result });
   });
 
   router.put('/:id', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = storeSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `with updated as (update stores set name = $2, address = $3, phone = $4 where id = $1 returning *)
-       select ${STORE_COLUMNS} from updated s`,
-      [id, body.name, body.address, body.phone],
-    );
-    if (!rows[0]) throw new HttpError(404, NOT_FOUND);
-    res.json({ store: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `with updated as (update stores set name = $2, address = $3, phone = $4 where id = $1 returning *)
+         select ${STORE_COLUMNS} from updated s`,
+        [id, body.name, body.address, body.phone],
+      );
+      if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+      return rows[0];
+    });
+    res.json({ store: result });
   });
 
   router.delete('/:id', async (req, res) => {

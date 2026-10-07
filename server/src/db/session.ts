@@ -2,6 +2,7 @@ import type pg from 'pg';
 
 export type SessionUser = {
   id: number;
+  tenant_id: number;
   role: 'admin' | 'seller';
   store_id: number | null;
 };
@@ -24,16 +25,22 @@ export async function withTransaction<T>(pool: pg.Pool, fn: (db: pg.PoolClient) 
 
 /**
  * Executa fn numa transação com o contexto do usuário que as políticas de RLS
- * leem (app.user_id, app.role, app.store_id). O contexto vale só para esta
- * transação, então a conexão volta limpa para o pool.
+ * leem (app.user_id, app.tenant_id, app.role, app.store_id). O contexto vale só
+ * para esta transação, então a conexão volta limpa para o pool.
  */
 export function withSession<T>(pool: pg.Pool, user: SessionUser, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
   return withTransaction(pool, async (db) => {
     await db.query(
       `select set_config('app.user_id', $1, true),
-              set_config('app.role', $2, true),
-              set_config('app.store_id', $3, true)`,
-      [String(user.id), user.role, user.store_id == null ? '' : String(user.store_id)],
+              set_config('app.tenant_id', $2, true),
+              set_config('app.role', $3, true),
+              set_config('app.store_id', $4, true)`,
+      [
+        String(user.id),
+        String(user.tenant_id),
+        user.role,
+        user.store_id == null ? '' : String(user.store_id),
+      ],
     );
     return fn(db);
   });

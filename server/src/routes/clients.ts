@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAdmin } from '../auth.js';
+import { currentUser, requireAdmin } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import { withSession } from '../db/session.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, pagination, parseId } from '../lib/validation.js';
 
@@ -99,15 +100,18 @@ export function clientsRouter(ctx: AppContext) {
   });
 
   router.post('/', async (req, res) => {
+    const me = currentUser(req);
     const body = clientSchema.parse(req.body);
     const conflicts = await findWhatsappConflicts(ctx, body.whatsapp, null);
     if (conflicts.length) throw duplicateWhatsapp(conflicts);
     const { rows } = await writeClient(
       ctx,
       () =>
-        ctx.pool.query(
-          'insert into clients (name, whatsapp) values ($1, $2) returning id, name, whatsapp, created_at',
-          [body.name, body.whatsapp],
+        withSession(ctx.pool, me, (db) =>
+          db.query(
+            'insert into clients (tenant_id, name, whatsapp) values ($1, $2, $3) returning id, name, whatsapp, created_at',
+            [me.tenant_id, body.name, body.whatsapp],
+          ),
         ),
       body.whatsapp,
       null,
@@ -116,21 +120,24 @@ export function clientsRouter(ctx: AppContext) {
   });
 
   router.put('/:id', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = clientSchema.parse(req.body);
-    // A existência do cliente vem antes do conflito: editar um id inexistente é 404,
-    // mesmo que o número informado pertença a outra pessoa.
-    const { rowCount } = await ctx.pool.query('select 1 from clients where id = $1', [id]);
-    if (!rowCount) throw new HttpError(404, NOT_FOUND);
+    const exists = await withSession(ctx.pool, me, (db) =>
+      db.query('select 1 from clients where id = $1', [id]),
+    );
+    if (!exists.rowCount) throw new HttpError(404, NOT_FOUND);
 
     const conflicts = await findWhatsappConflicts(ctx, body.whatsapp, id);
     if (conflicts.length) throw duplicateWhatsapp(conflicts);
     const { rows } = await writeClient(
       ctx,
       () =>
-        ctx.pool.query(
-          'update clients set name = $2, whatsapp = $3 where id = $1 returning id, name, whatsapp, created_at',
-          [id, body.name, body.whatsapp],
+        withSession(ctx.pool, me, (db) =>
+          db.query(
+            'update clients set name = $2, whatsapp = $3 where id = $1 returning id, name, whatsapp, created_at',
+            [id, body.name, body.whatsapp],
+          ),
         ),
       body.whatsapp,
       id,

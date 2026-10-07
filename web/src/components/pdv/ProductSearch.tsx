@@ -134,47 +134,49 @@ export function ProductSearch({
 
   if (pending) {
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-primary bg-primary-soft/60 p-2 pl-3">
-        <div className="min-w-0 flex-1 basis-56">
+      <div className="flex flex-col gap-2 rounded-md border border-primary bg-primary-soft/60 p-2 pl-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:flex-1 sm:basis-56">
           <p className="truncate font-semibold">{pending.name}</p>
           <p className="text-[13px] text-muted-foreground tabular-nums">
             {pending.code && <span className="mr-2">{pending.code}</span>}
             {formatMoney(pending.price)} / {pending.unit}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm font-medium">
-          Qtd.
-          <Input
-            ref={qtyRef}
-            aria-label="Quantidade"
-            value={qtyText}
-            onChange={(e) => {
-              setQtyText(e.target.value);
-              setQtyError(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                confirmQuantity();
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelPending();
-              }
-            }}
-            inputMode="decimal"
-            autoComplete="off"
-            aria-invalid={qtyError || undefined}
-            className="h-11 w-28 text-right text-base font-semibold tabular-nums"
-          />
-          <span className="w-8 text-muted-foreground">{pending.unit}</span>
-        </label>
-        <Button size="lg" onClick={confirmQuantity} className="h-11">
-          <Plus />
-          Adicionar
-        </Button>
-        <Button variant="ghost" size="icon" onClick={cancelPending} aria-label="Cancelar produto">
-          <X />
-        </Button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            Qtd.
+            <Input
+              ref={qtyRef}
+              aria-label="Quantidade"
+              value={qtyText}
+              onChange={(e) => {
+                setQtyText(e.target.value);
+                setQtyError(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirmQuantity();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelPending();
+                }
+              }}
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={qtyError || undefined}
+              className="h-11 w-28 text-right text-base font-semibold tabular-nums"
+            />
+            <span className="w-8 text-muted-foreground">{pending.unit}</span>
+          </label>
+          <Button size="lg" onClick={confirmQuantity} className="h-11">
+            <Plus />
+            Adicionar
+          </Button>
+          <Button variant="ghost" size="icon" onClick={cancelPending} aria-label="Cancelar produto">
+            <X />
+          </Button>
+        </div>
         {qtyError && (
           <p className="w-full text-[13px] text-destructive">Informe uma quantidade maior que zero. Use vírgula para decimais.</p>
         )}

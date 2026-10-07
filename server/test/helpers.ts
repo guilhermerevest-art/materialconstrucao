@@ -11,13 +11,15 @@ import { createPool } from '../src/db/pool.js';
 loadEnvFile();
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
-export const PASSWORD = 'senha-de-teste';
+export const PASSWORD = 'kenha-de-teste';
+const SLUG = 'parceiro';
 
 export function testConfig(databaseUrl: string): Config {
   return {
     env: 'test',
     port: 0,
     databaseUrl,
+    databaseLoginUrl: databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_login:oms_login@'),
     jwtSecret: 'segredo-de-teste-com-pelo-menos-32-caracteres',
     cookieSecure: false,
     trustProxy: false,
@@ -27,46 +29,78 @@ export function testConfig(databaseUrl: string): Config {
   };
 }
 
-/** Recria o schema do zero e aplica as migrações. */
-export async function resetDatabase(pool: pg.Pool) {
-  await pool.query('drop schema if exists public cascade');
-  await pool.query('create schema public');
-  await runMigrations(pool, () => {});
+/** Recria o schema do zero e aplica as migrações (usa o pool admin). */
+export async function resetDatabase(_pool: pg.Pool, adminPool?: pg.Pool) {
+  const p = adminPool ?? _pool;
+  await p.query('drop schema if exists public cascade');
+  await p.query('create schema public');
+  await p.query('grant usage on schema public to oms_app');
+  await runMigrations(p, () => {});
+  // Re-aplica os grants depois que as tabelas foram recriadas.
+  await p.query(`
+    grant select, insert, update, delete on all tables in schema public to oms_app;
+    grant usage, select on all sequences in schema public to oms_app;
+    grant usage on schema public to oms_login;
+    grant execute on function find_login(text, text) to oms_login;
+    grant execute on function load_user_with_store(bigint) to oms_login;
+  `);
 }
 
 export type Fixtures = Awaited<ReturnType<typeof seedFixtures>>;
 
-/** Duas lojas, um admin, um vendedor em cada loja, produtos e um cliente. */
-export async function seedFixtures(pool: pg.Pool) {
+/**
+ * Duas lojas, um admin, um vendedor em cada loja, produtos e um cliente.
+ * Tudo dentro de um único lojamestre (SLUG) — os testes legados não precisam
+ * de multi-tenant. Para testes multi-tenant, os tests específicos usam
+ * `createTenant` abaixo.
+ */
+export async function seedFixtures(_pool: pg.Pool, adminPool?: pg.Pool) {
+  const p = adminPool ?? _pool;
   const hash = await hashPassword(PASSWORD);
-  const stores = await pool.query<{ id: number }>(
-    `insert into stores (name, address, phone) values
-       ('Loja A', 'Rua A, 1', '(11) 3333-0001'),
-       ('Loja B', 'Rua B, 2', '(11) 3333-0002')
+  // Cria lojamestre padrão e uma linha de settings para não dar conflito de FK.
+  // O índice único de tenants é em lower(slug), então ON CONFLICT precisa casar a expressão.
+  const tenant = await p.query<{ id: number }>(
+    `insert into tenants (slug, name) values ($1, 'Loja de teste')
+     on conflict (lower(slug)) do update set name = excluded.name
      returning id`,
+    [SLUG],
+  );
+  const tid = tenant.rows[0]!.id;
+  await p.query('insert into settings (tenant_id) values ($1)', [tid]);
+
+  const stores = await p.query<{ id: number }>(
+    `insert into stores (tenant_id, name, address, phone) values
+       ($1, 'Loja A', 'Rua A, 1', '(11) 3333-0001'),
+       ($1, 'Loja B', 'Rua B, 2', '(11) 3333-0002')
+     returning id`,
+    [tid],
   );
   const [storeA, storeB] = stores.rows.map((r) => r.id) as [number, number];
-  const users = await pool.query<{ id: number }>(
-    `insert into users (name, email, password_hash, role, store_id) values
-       ('Admin', 'admin@teste.local', $1, 'admin', null),
-       ('Vendedor A', 'vendedor.a@teste.local', $1, 'seller', $2),
-       ('Vendedor B', 'vendedor.b@teste.local', $1, 'seller', $3)
+  const users = await p.query<{ id: number }>(
+    `insert into users (tenant_id, name, username, email, password_hash, role, store_id) values
+       ($1, 'Admin', 'admin', 'admin@teste.local', $2, 'admin', null),
+       ($1, 'Vendedor A', 'vendedor.a', 'vendedor.a@teste.local', $2, 'seller', $3),
+       ($1, 'Vendedor B', 'vendedor.b', 'vendedor.b@teste.local', $2, 'seller', $4)
      returning id`,
-    [hash, storeA, storeB],
+    [tid, hash, storeA, storeB],
   );
   const [adminId, sellerAId, sellerBId] = users.rows.map((r) => r.id) as [number, number, number];
-  const products = await pool.query<{ id: number }>(
-    `insert into products (code, name, unit, price) values
-       ('CIM-50', 'Cimento CP II 50 kg', 'SC', 38.90),
-       ('TIJ-8F', 'Tijolo cerâmico 8 furos', 'UN', 1.35),
-       ('ARE-MED', 'Areia média', 'M³', 145.00)
+  const products = await p.query<{ id: number }>(
+    `insert into products (tenant_id, code, name, unit, price) values
+       ($1, 'CIM-50', 'Cimento CP II 50 kg', 'SC', 38.90),
+       ($1, 'TIJ-8F', 'Tijolo cerâmico 8 furos', 'UN', 1.35),
+       ($1, 'ARE-MED', 'Areia média', 'M³', 145.00)
      returning id`,
+    [tid],
   );
   const [cimento, tijolo, areia] = products.rows.map((r) => r.id) as [number, number, number];
-  const client = await pool.query<{ id: number }>(
-    `insert into clients (name, whatsapp) values ('Maria da Silva', '5511987654321') returning id`,
+  const client = await p.query<{ id: number }>(
+    `insert into clients (tenant_id, name, whatsapp) values ($1, 'Maria da Silva', '5511987654321') returning id`,
+    [tid],
   );
   return {
+    tenantId: tid,
+    slug: SLUG,
     storeA,
     storeB,
     adminId,
@@ -78,15 +112,28 @@ export async function seedFixtures(pool: pg.Pool) {
 }
 
 export function setupApp(databaseUrl: string) {
-  const pool = createPool(databaseUrl);
-  const app = createApp({ pool, config: testConfig(databaseUrl) });
-  return { pool, app };
+  // Conecta com o role oms_app para que o RLS seja aplicado (postgres é superuser e bypassa).
+  // resetDatabase precisa da conexão admin para dropar schema e recriar — o test
+  // chama um segundo pool (admin) só para isso.
+  // O loginPool conecta com oms_login, que tem BYPASSRLS mas só pode chamar
+  // find_login — usado só no /auth/login.
+  const adminPool = createPool(databaseUrl);
+  const appUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_app:oms_app@');
+  const loginUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_login:oms_login@');
+  const pool = createPool(appUrl);
+  const loginPool = createPool(loginUrl);
+  const app = createApp({ pool, loginPool, config: testConfig(databaseUrl) });
+  return { pool, loginPool, app, adminPool };
 }
 
-export async function login(app: ReturnType<typeof createApp>, email: string) {
+export async function login(app: ReturnType<typeof createApp>, username: string) {
   const agent = request.agent(app);
-  const res = await agent.post('/api/auth/login').send({ email, password: PASSWORD });
-  if (res.status !== 200) throw new Error(`login falhou para ${email}: ${res.status} ${JSON.stringify(res.body)}`);
+  const res = await agent.post('/api/auth/login').send({
+    tenant_slug: SLUG,
+    username,
+    password: PASSWORD,
+  });
+  if (res.status !== 200) throw new Error(`login falhou para ${username}: ${res.status} ${JSON.stringify(res.body)}`);
   return agent;
 }
 

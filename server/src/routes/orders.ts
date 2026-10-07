@@ -148,10 +148,10 @@ export function ordersRouter(ctx: AppContext) {
       if (user.role === 'admin') await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
       const { rows } = await db.query<{ id: number }>(
-        `insert into orders (user_id, store_id, client_id, status, notes, confirmed_at)
-         values ($1, $2, $3, $4, $5, case when $4 = 'order' then now() end)
+        `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, case when $5 = 'order' then now() end)
          returning id`,
-        [user.id, storeId, body.client_id, body.status, body.notes],
+        [user.tenant_id, user.id, storeId, body.client_id, body.status, body.notes],
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
@@ -241,7 +241,7 @@ export function ordersRouter(ctx: AppContext) {
     const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
     if (!order) throw new HttpError(404, NOT_FOUND);
 
-    const settings = await loadEvolutionSettings(pool);
+    const settings = await loadEvolutionSettings(pool, user.tenant_id);
     if (!settings) {
       throw new HttpError(
         422,
