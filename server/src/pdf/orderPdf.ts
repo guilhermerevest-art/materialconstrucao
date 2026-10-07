@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { documentLabel, formatDateTime, formatMoney, formatOrderNumber, formatQuantity } from '../lib/format.js';
 import { formatWhatsapp } from '../lib/phone.js';
-import type { OrderDetail } from '../orders/queries.js';
+import type { OrderDetail, OrderPdfDetail, StoreLogo } from '../orders/queries.js';
 
 type Doc = PDFKit.PDFDocument;
 
@@ -18,6 +18,9 @@ const FOOTER_SPACE = 34;
 const CELL_PAD_X = 6;
 const CELL_PAD_Y = 5;
 const ROW_FONT_SIZE = 9.5;
+const LOGO_BOX = 64;
+const LOGO_GAP = 12;
+const STORE_NAME_SIZE = 16;
 
 type Align = 'left' | 'right' | 'center';
 const COLUMNS: { label: string; width: number; align: Align }[] = [
@@ -39,11 +42,11 @@ export function pdfSafe(value: string | null | undefined): string {
     .replace(/[^\n -~ -ÿ]/gu, (ch) => (WIN_ANSI_EXTRAS.has(ch) ? ch : ''));
 }
 
-export function orderFileName(order: Pick<OrderDetail, 'id' | 'status'>) {
+export function orderFileName(order: Pick<OrderPdfDetail, 'id' | 'status'>) {
   return `${order.status === 'quote' ? 'orcamento' : 'pedido'}-${formatOrderNumber(order.id)}.pdf`;
 }
 
-export function renderOrderPdf(order: OrderDetail, timeZone: string): Promise<Buffer> {
+export function renderOrderPdf(order: OrderPdfDetail, timeZone: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const label = documentLabel(order.status);
     const doc = new PDFDocument({
@@ -69,7 +72,7 @@ function contentBottom(doc: Doc) {
   return doc.page.height - MARGIN - FOOTER_SPACE;
 }
 
-function drawDocument(doc: Doc, order: OrderDetail, timeZone: string) {
+function drawDocument(doc: Doc, order: OrderPdfDetail, timeZone: string) {
   let y = drawHeader(doc, order, timeZone);
   y = drawParties(doc, order, y + 16);
   y = drawItems(doc, order, y + 18);
@@ -78,18 +81,42 @@ function drawDocument(doc: Doc, order: OrderDetail, timeZone: string) {
   drawFooters(doc, timeZone);
 }
 
-function drawHeader(doc: Doc, order: OrderDetail, timeZone: string): number {
+/**
+ * Desenha a logo numa caixa fixa e devolve true. Logo ausente, corrompida ou de um
+ * formato que o pdfkit não embute (webp) não pode derrubar a geração do orçamento:
+ * nesses casos devolvemos false e o cabeçalho sai no layout sem logo.
+ */
+function drawStoreLogo(doc: Doc, logo: StoreLogo | null, x: number, y: number): boolean {
+  if (!logo) return false;
+  try {
+    doc.image(Buffer.from(logo.data, 'base64'), x, y, { fit: [LOGO_BOX, LOGO_BOX] });
+    return true;
+  } catch (err) {
+    console.error('Logo da loja não pôde ser desenhada no PDF, seguindo sem ela:', err);
+    return false;
+  }
+}
+
+function drawHeader(doc: Doc, order: OrderPdfDetail, timeZone: string): number {
   const left = MARGIN;
   const width = doc.page.width - MARGIN * 2;
   const storeWidth = width * 0.6;
   const docX = left + storeWidth;
   const docWidth = width - storeWidth;
 
-  doc.font('Helvetica-Bold').fontSize(16).fillColor(INK).text(pdfSafe(order.store_name), left, MARGIN, { width: storeWidth });
+  const hasLogo = drawStoreLogo(doc, order.store_logo, left, MARGIN);
+  // Sem logo o texto da loja continua no canto, exatamente onde estava antes.
+  const textLeft = left + (hasLogo ? LOGO_BOX + LOGO_GAP : 0);
+  const textWidth = storeWidth - (textLeft - left);
+
+  const name = pdfSafe(order.store_name);
+  doc.font('Helvetica-Bold').fontSize(STORE_NAME_SIZE).fillColor(INK);
+  const nameY = hasLogo ? MARGIN + Math.max(0, (LOGO_BOX - doc.heightOfString(name, { width: textWidth })) / 2) : MARGIN;
+  doc.text(name, textLeft, nameY, { width: textWidth });
   doc.font('Helvetica').fontSize(9).fillColor(MUTED);
-  if (order.store_address) doc.text(pdfSafe(order.store_address), left, doc.y + 3, { width: storeWidth });
-  if (order.store_phone) doc.text(`Telefone: ${pdfSafe(order.store_phone)}`, left, doc.y + 1, { width: storeWidth });
-  const storeBottom = doc.y;
+  if (order.store_address) doc.text(pdfSafe(order.store_address), textLeft, doc.y + 3, { width: textWidth });
+  if (order.store_phone) doc.text(`Telefone: ${pdfSafe(order.store_phone)}`, textLeft, doc.y + 1, { width: textWidth });
+  const storeBottom = hasLogo ? Math.max(doc.y, MARGIN + LOGO_BOX) : doc.y;
 
   doc.font('Helvetica-Bold').fontSize(18).fillColor(ACCENT).text(documentLabel(order.status), docX, MARGIN, {
     width: docWidth,

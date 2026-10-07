@@ -451,6 +451,79 @@ describeDb('API com banco de teste', () => {
     });
   });
 
+  describe('logo da loja', () => {
+    /** 1x1 PNG transparente em base64 (8 bytes decodificados). */
+    const tinyPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+    it('PUT com PNG valido salva a logo e devolve has_logo true', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
+      expect(res.status).toBe(200);
+      expect(res.body.store.has_logo).toBe(true);
+    });
+
+    it('GET /stores/:id/logo devolve mime e data exatamente como foram enviados', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
+
+      const res = await admin.get(`/api/stores/${f.storeA}/logo`);
+      expect(res.status).toBe(200);
+      expect(res.body.mime).toBe('image/png');
+      expect(res.body.data).toBe(tinyPng);
+    });
+
+    it('PUT com mime fora da lista devolve 400', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/gif' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/não aceito/);
+    });
+
+    it('PUT com base64 malformado devolve 400', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: 'não-é-base64!@#$', mime: 'image/png' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/base64/);
+    });
+
+    it('PUT com imagem acima de 500 KB devolve 400', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      // Gera mais de 500 KB em bytes decodificados para estourar o limite.
+      const huge = Buffer.alloc(501 * 1024, 'A').toString('base64');
+      const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: huge, mime: 'image/png' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/500 KB/);
+    });
+
+    it('DELETE /stores/:id/logo devolve 204 e GET subsequente devolve 404', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
+
+      const del = await admin.delete(`/api/stores/${f.storeA}/logo`);
+      expect(del.status).toBe(204);
+
+      const get = await admin.get(`/api/stores/${f.storeA}/logo`);
+      expect(get.status).toBe(404);
+    });
+
+    it('GET /stores (listagem) traz has_logo true e NAO traz logo_data', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
+
+      const list = await admin.get('/api/stores');
+      expect(list.status).toBe(200);
+      const store = list.body.items.find((s: any) => s.id === f.storeA);
+      expect(store.has_logo).toBe(true);
+      expect(store.logo_data).toBeUndefined();
+    });
+
+    it('rota de loja inexistente devolve 404, nao 500', async () => {
+      const admin = await login(app, 'admin@teste.local');
+      const res = await admin.put('/api/stores/999999/logo').send({ data: tinyPng, mime: 'image/png' });
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('WhatsApp único por cliente', () => {
     async function totalClientes() {
       const { rows } = await pool.query<{ total: number }>('select count(*)::int as total from clients');

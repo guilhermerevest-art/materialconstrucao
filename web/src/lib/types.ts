@@ -17,6 +17,8 @@ export type Store = {
   address: string | null;
   phone: string | null;
   users_count: number;
+  /** A imagem em si vem por GET /stores/:id/logo, fora do estado da tela. */
+  has_logo: boolean;
   created_at: string;
 };
 

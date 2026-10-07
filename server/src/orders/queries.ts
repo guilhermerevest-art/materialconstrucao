@@ -35,15 +35,44 @@ export type OrderDetail = {
   items: OrderItem[];
 };
 
+/** Logo da loja guardada no banco: base64 sem o prefixo "data:" e o tipo da imagem. */
+export type StoreLogo = { data: string; mime: string };
+
+/**
+ * O que o PDF desenha. A logo não faz parte de OrderDetail de propósito: a mesma
+ * função alimenta a resposta JSON da API e a geração do PDF, e a imagem em base64
+ * não pode viajar para o navegador a cada `GET /api/orders/:id`.
+ */
+export type OrderPdfDetail = OrderDetail & { readonly store_logo: StoreLogo | null };
+
+type OrderPdfRow = Omit<OrderPdfDetail, 'items' | 'store_logo'> & {
+  logo_data: string | null;
+  logo_mime: string | null;
+};
+
 export type OrderItemInput = { product_id: number; quantity: number };
 
+function toStoreLogo(data: string | null, mime: string | null): StoreLogo | null {
+  return data && mime ? { data, mime } : null;
+}
+
+/**
+ * Anexa a logo como propriedade não enumerável. O PDF lê `order.store_logo`; o
+ * `res.json({ order })` das rotas só enxerga propriedades enumeráveis, então a
+ * imagem fica fora da resposta da API sem precisar tratar o caso na rota.
+ */
+function withStoreLogo(order: OrderDetail, logo: StoreLogo | null): OrderPdfDetail {
+  return Object.defineProperty(order, 'store_logo', { value: logo, enumerable: false }) as OrderPdfDetail;
+}
+
 /** Pedido com itens. Precisa rodar dentro de withSession: o RLS decide se o pedido é visível. */
-export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<OrderDetail | null> {
-  const { rows } = await db.query<Omit<OrderDetail, 'items'>>(
+export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<OrderPdfDetail | null> {
+  const { rows } = await db.query<OrderPdfRow>(
     `select o.id, o.user_id, o.store_id, o.client_id, o.status, o.total_amount, o.notes,
             o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
             c.name as client_name, c.whatsapp as client_whatsapp,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
+            s.logo_data, s.logo_mime,
             u.name as user_name
        from orders o
        join clients c on c.id = o.client_id
@@ -52,8 +81,8 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
       where o.id = $1`,
     [id],
   );
-  const order = rows[0];
-  if (!order) return null;
+  const row = rows[0];
+  if (!row) return null;
   const items = await db.query<OrderItem>(
     `select id, position, product_id, product_code, product_name, unit, quantity, unit_price, subtotal
        from order_items
@@ -61,7 +90,8 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
       order by position`,
     [id],
   );
-  return { ...order, items: items.rows };
+  const { logo_data, logo_mime, ...order } = row;
+  return withStoreLogo({ ...order, items: items.rows }, toStoreLogo(logo_data, logo_mime));
 }
 
 /**
