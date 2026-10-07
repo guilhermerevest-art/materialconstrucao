@@ -12,6 +12,8 @@ import { OrdersPage } from './pages/OrdersPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StoresPage } from './pages/StoresPage';
+import { SuperLoginPage } from './pages/SuperLoginPage';
+import { SuperTenantsPage } from './pages/SuperTenantsPage';
 import { UsersPage } from './pages/UsersPage';
 
 function FullPageSpinner() {
@@ -67,6 +69,11 @@ export const router = createBrowserRouter([
       { path: '/login', element: <LoginPage /> },
     ],
   },
+  // /super não passa por GuestOnly: o cookie oms_super_session não compartilha
+  // a sessão da lojamestre, então um super admin pode ficar logado ao mesmo
+  // tempo que um vendedor.
+  { path: '/super/login', element: <SuperLoginPage /> },
+  { path: '/super', element: <SuperTenantsPage /> },
   {
     path: '/',
     element: <RequireAuth />,

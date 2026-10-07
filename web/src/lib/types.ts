@@ -105,6 +105,22 @@ export type Settings = {
   updated_at: string;
 };
 
+export type Tenant = {
+  id: number;
+  slug: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+  stores_count: number;
+  users_count: number;
+};
+
+export type SuperAdmin = {
+  id: number;
+  email: string;
+  active: boolean;
+};
+
 export type Dashboard = {
   summary: {
     orders_today: number;
