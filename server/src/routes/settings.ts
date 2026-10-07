@@ -92,7 +92,7 @@ export function settingsRouter(ctx: AppContext) {
 
   router.post('/test', async (req, res) => {
     const me = currentUser(req);
-    const settings = await loadEvolutionSettings(ctx.pool, me.tenant_id);
+    const settings = await withSession(ctx.pool, me, (db) => loadEvolutionSettings(db, me.tenant_id));
     if (!settings) throw new HttpError(422, 'Salve a URL, a instância e a API Key antes de testar.');
     try {
       const state = await getConnectionState(settings, ctx.config.evolutionTimeoutMs);

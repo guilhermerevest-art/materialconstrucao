@@ -241,7 +241,7 @@ export function ordersRouter(ctx: AppContext) {
     const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
     if (!order) throw new HttpError(404, NOT_FOUND);
 
-    const settings = await loadEvolutionSettings(pool, user.tenant_id);
+    const settings = await withSession(pool, user, (db) => loadEvolutionSettings(db, user.tenant_id));
     if (!settings) {
       throw new HttpError(
         422,

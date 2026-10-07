@@ -3,7 +3,8 @@ export type Role = 'admin' | 'seller';
 export type User = {
   id: number;
   name: string;
-  email: string;
+  username: string;
+  email: string | null;
   role: Role;
   store_id: number | null;
   store_name: string | null;

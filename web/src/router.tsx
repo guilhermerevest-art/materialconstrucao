@@ -4,7 +4,7 @@ import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { ForgotPasswordPage, LoginPage } from './pages/LoginPage';
+import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
@@ -65,7 +65,6 @@ export const router = createBrowserRouter([
     element: <GuestOnly />,
     children: [
       { path: '/login', element: <LoginPage /> },
-      { path: '/esqueci-senha', element: <ForgotPasswordPage /> },
     ],
   },
   {

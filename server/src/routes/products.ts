@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { currentUser, requireAdmin } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
-import { withSession } from '../db/session.js';
+import { queryAs, withSession } from '../db/session.js';
 import { likePattern, optionalQuery, optionalText, pagination, parseId } from '../lib/validation.js';
 
 const productSchema = z.object({
@@ -38,7 +38,7 @@ export function productsRouter(ctx: AppContext) {
     // Vendedor só enxerga produtos ativos.
     const status = user.role === 'admin' ? query.status : 'active';
     const { q, page, page_size } = query;
-    const { rows } = await ctx.pool.query(
+    const { rows } = await queryAs(ctx.pool, user,
       `select ${PRODUCT_COLUMNS}, count(*) over () as total_count
          from products
         where ($1::text is null
@@ -90,8 +90,9 @@ export function productsRouter(ctx: AppContext) {
   });
 
   router.delete('/:id', requireAdmin, async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rowCount } = await ctx.pool.query('delete from products where id = $1', [id]);
+    const { rowCount } = await queryAs(ctx.pool, me, 'delete from products where id = $1', [id]);
     if (!rowCount) throw new HttpError(404, NOT_FOUND);
     res.status(204).end();
   });

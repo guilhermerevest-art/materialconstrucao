@@ -1,6 +1,5 @@
-import { ArrowLeft } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import { BrandMark } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
@@ -90,30 +89,8 @@ export function LoginPage() {
         <Button type="submit" size="lg" loading={login.isPending} className="mt-1 w-full">
           Entrar
         </Button>
-        <Link to="/esqueci-senha" className="justify-self-center text-sm font-medium text-primary hover:underline">
-          Esqueci minha senha
-        </Link>
       </form>
     </AuthShell>
   );
 }
-
-export function ForgotPasswordPage() {
-  useDocumentTitle('Esqueci minha senha');
-  return (
-    <AuthShell>
-      <h1 className="text-lg font-semibold">Esqueci minha senha</h1>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        Peça ao administrador da rede para definir uma nova senha para você. Ele faz isso em Administração, na tela de
-        Vendedores. Depois de entrar, troque a senha em <strong className="text-foreground">Alterar senha</strong>, no
-        menu com o seu nome.
-      </p>
-      <Button asChild variant="outline" className="mt-6 w-full">
-        <Link to="/login">
-          <ArrowLeft />
-          Voltar para o login
-        </Link>
-      </Button>
-    </AuthShell>
-  );
-}
+        

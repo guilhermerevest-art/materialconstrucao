@@ -541,7 +541,9 @@ describeDb('API com banco de teste', () => {
 
   describe('WhatsApp único por cliente', () => {
     async function totalClientes() {
-      const { rows } = await pool.query<{ total: number }>('select count(*)::int as total from clients');
+      // adminPool é o dono do schema e bypassa RLS; pool é oms_app, que vê só
+      // o próprio tenant — útil para checar que o insert foi bloqueado.
+      const { rows } = await adminPool.query<{ total: number }>('select count(*)::int as total from clients');
       return rows[0]!.total;
     }
 

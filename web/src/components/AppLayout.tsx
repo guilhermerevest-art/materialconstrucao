@@ -114,7 +114,7 @@ export function AppLayout() {
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>
                   <span className="block font-medium">{user.name}</span>
-                  <span className="block text-xs text-muted-foreground">{user.email}</span>
+                  <span className="block text-xs text-muted-foreground">{user.email ?? user.username}</span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setPasswordOpen(true)}>

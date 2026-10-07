@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { currentUser, hashPassword } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
-import { withSession } from '../db/session.js';
+import { withSession, queryAs } from '../db/session.js';
 import { parseId } from '../lib/validation.js';
 
 const passwordSchema = z.string().min(8, 'A senha precisa ter pelo menos 8 caracteres.').max(200);
@@ -55,7 +55,7 @@ export function usersRouter(ctx: AppContext) {
 
   router.get('/', async (req, res) => {
     const me = currentUser(req);
-    const { rows } = await ctx.pool.query(
+    const { rows } = await queryAs(ctx.pool, me,
       `select ${USER_COLUMNS} from users u left join stores s on s.id = u.store_id
         where u.tenant_id = $1
         order by u.active desc, u.name`,
