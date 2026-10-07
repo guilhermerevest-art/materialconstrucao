@@ -1,0 +1,18 @@
+const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const quantity = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+
+export const formatMoney = (value: number) => money.format(value);
+export const formatQuantity = (value: number) => quantity.format(value);
+
+/** "07/10/2026 às 14:32" no fuso da loja. */
+export function formatDateTime(value: Date, timeZone: string) {
+  const date = new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(value);
+  const time = new Intl.DateTimeFormat('pt-BR', { timeZone, hour: '2-digit', minute: '2-digit' }).format(value);
+  return `${date} às ${time}`;
+}
+
+export type OrderStatus = 'quote' | 'order';
+
+export const formatOrderNumber = (id: number) => String(id).padStart(6, '0');
+
+export const documentLabel = (status: OrderStatus) => (status === 'quote' ? 'Orçamento' : 'Pedido');

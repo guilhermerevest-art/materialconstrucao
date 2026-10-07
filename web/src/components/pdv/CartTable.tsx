@@ -1,0 +1,135 @@
+import { Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { centsToMoney, decimalToInput, formatMoney, lineTotalCents, parseDecimal } from '@/lib/format';
+import { cn } from '@/lib/utils';
+
+export type CartItem = {
+  product_id: number;
+  code: string | null;
+  name: string;
+  unit: string;
+  unit_price: number;
+  quantity: number;
+};
+
+const toQuantity = (text: string) => {
+  const parsed = parseDecimal(text);
+  return parsed === null || parsed <= 0 || parsed > 999_999 ? null : Math.round(parsed * 1000) / 1000;
+};
+
+/**
+ * Quantidade editável na linha. Vale enquanto se digita, então F9 com o cursor
+ * no campo já salva o número novo. Valor inválido volta ao anterior ao sair do campo.
+ */
+function QuantityInput({ value, label, onCommit }: { value: number; label: string; onCommit: (value: number) => void }) {
+  const [text, setText] = useState(decimalToInput(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(decimalToInput(value));
+  }, [value]);
+  const invalid = toQuantity(text) === null;
+
+  return (
+    <Input
+      value={text}
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      inputMode="decimal"
+      autoComplete="off"
+      onFocus={() => {
+        editing.current = true;
+      }}
+      onChange={(e) => {
+        setText(e.target.value);
+        const quantity = toQuantity(e.target.value);
+        if (quantity !== null && quantity !== value) onCommit(quantity);
+      }}
+      onBlur={() => {
+        editing.current = false;
+        setText(decimalToInput(value));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className="h-9 w-24 text-right tabular-nums"
+    />
+  );
+}
+
+export function CartTable({
+  items,
+  onQuantityChange,
+  onRemove,
+}: {
+  items: CartItem[];
+  onQuantityChange: (productId: number, quantity: number) => void;
+  onRemove: (productId: number) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="mx-5 mb-5 rounded-md border border-dashed border-input px-4 py-8 text-center text-sm text-muted-foreground">
+        Nenhum produto no carrinho. Busque pelo nome ou código e tecle Enter.
+      </div>
+    );
+  }
+
+  return (
+    <Table>
+      <THead>
+        <TR>
+          <TH className="w-10 pl-5">#</TH>
+          <TH>Produto</TH>
+          <TH className="w-14 text-center">Un.</TH>
+          <TH className="w-28 text-right">Qtd.</TH>
+          <TH className="w-28 text-right">Preço unit.</TH>
+          <TH className="w-32 text-right">Subtotal</TH>
+          <TH className="w-14 pr-5">
+            <span className="sr-only">Remover</span>
+          </TH>
+        </TR>
+      </THead>
+      <TBody>
+        {items.map((item, index) => (
+          <TR key={item.product_id} className={cn(index % 2 === 1 && 'bg-background/50')}>
+            <TD className="pl-5 text-muted-foreground tabular-nums">{index + 1}</TD>
+            <TD className="py-2">
+              <p className="font-medium">{item.name}</p>
+              {item.code && <p className="text-xs text-muted-foreground">{item.code}</p>}
+            </TD>
+            <TD className="text-center text-muted-foreground">{item.unit}</TD>
+            <TD className="text-right">
+              <div className="flex justify-end">
+                <QuantityInput
+                  value={item.quantity}
+                  label={`Quantidade de ${item.name}`}
+                  onCommit={(quantity) => onQuantityChange(item.product_id, quantity)}
+                />
+              </div>
+            </TD>
+            <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
+            <TD className="text-right font-semibold tabular-nums">
+              {centsToMoney(lineTotalCents(item.unit_price, item.quantity))}
+            </TD>
+            <TD className="pr-5 text-right">
+              <Button
+                variant="destructive-ghost"
+                size="icon"
+                className="size-8"
+                onClick={() => onRemove(item.product_id)}
+                aria-label={`Remover ${item.name}`}
+              >
+                <Trash2 />
+              </Button>
+            </TD>
+          </TR>
+        ))}
+      </TBody>
+    </Table>
+  );
+}

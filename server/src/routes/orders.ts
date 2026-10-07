@@ -1,0 +1,285 @@
+import { Router } from 'express';
+import type pg from 'pg';
+import { z } from 'zod';
+import { currentUser, requireAdmin, type AuthUser } from '../auth.js';
+import type { AppContext } from '../context.js';
+import { withSession } from '../db/session.js';
+import { HttpError } from '../errors.js';
+import { describeEvolutionError, loadEvolutionSettings, sendPdfDocument } from '../lib/evolution.js';
+import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
+import { normalizeWhatsapp } from '../lib/phone.js';
+import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
+import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
+import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+
+const itemSchema = z.object({
+  product_id: z.number().int().positive(),
+  quantity: z
+    .number('Informe a quantidade.')
+    .positive('A quantidade precisa ser maior que zero.')
+    .max(999_999, 'Quantidade alta demais.'),
+});
+
+const orderSchema = z.object({
+  client_id: z.number('Selecione o cliente.').int().positive('Selecione o cliente.'),
+  status: z.enum(['quote', 'order'], 'Escolha entre orçamento e pedido.'),
+  notes: optionalText(1000),
+  store_id: z.number().int().positive().nullable().optional(),
+  items: z
+    .array(itemSchema, 'Adicione pelo menos um produto.')
+    .min(1, 'Adicione pelo menos um produto.')
+    .max(300, 'Um pedido pode ter no máximo 300 itens.'),
+});
+
+const dateParam = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.')
+    .optional(),
+);
+
+const listSchema = z.object({
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order']).optional()),
+  from: dateParam,
+  to: dateParam,
+  q: optionalQuery,
+  store_id: optionalQueryId,
+  mine: z.enum(['true', 'false']).optional(),
+  ...pagination,
+});
+
+const NOT_FOUND = 'Pedido não encontrado.';
+
+/** Admin escolhe a loja (padrão: a dele); vendedor sempre lança na própria loja. */
+function resolveStoreId(user: AuthUser, requested: number | null | undefined): number {
+  const storeId = user.role === 'admin' ? (requested ?? user.store_id) : user.store_id;
+  if (!storeId) throw new HttpError(400, 'Selecione a loja do pedido.');
+  return storeId;
+}
+
+async function assertExists(db: pg.PoolClient, table: 'clients' | 'stores', id: number, message: string) {
+  const { rowCount } = await db.query(`select 1 from ${table} where id = $1`, [id]);
+  if (!rowCount) throw new HttpError(400, message);
+}
+
+export function orderCaption(order: OrderDetail) {
+  const firstName = order.client_name.trim().split(/\s+/)[0] ?? '';
+  const label = documentLabel(order.status).toLowerCase();
+  return [
+    `Olá, ${firstName}! Segue em PDF o seu ${label} nº ${formatOrderNumber(order.id)}.`,
+    `Total: ${formatMoney(order.total_amount)}`,
+    order.store_name,
+  ].join('\n');
+}
+
+/**
+ * Todo acesso a pedidos passa por withSession, então o RLS do banco também
+ * restringe o vendedor à própria loja. Pedido de outra loja responde 404.
+ */
+export function ordersRouter(ctx: AppContext) {
+  const router = Router();
+  const { pool, config } = ctx;
+
+  router.get('/', async (req, res) => {
+    const user = currentUser(req);
+    const query = listSchema.parse(req.query);
+
+    const where: string[] = [];
+    const params: unknown[] = [];
+    const param = (value: unknown) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (user.role === 'seller') where.push(`o.store_id = ${param(user.store_id)}`);
+    else if (query.store_id) where.push(`o.store_id = ${param(query.store_id)}`);
+    if (query.mine === 'true') where.push(`o.user_id = ${param(user.id)}`);
+    if (query.status) where.push(`o.status = ${param(query.status)}`);
+    if (query.from) where.push(`o.created_at >= (${param(query.from)}::date)::timestamp at time zone ${param(config.timeZone)}`);
+    if (query.to) where.push(`o.created_at < (${param(query.to)}::date + 1)::timestamp at time zone ${param(config.timeZone)}`);
+    if (query.q) {
+      const conditions = [`search_norm(c.name) like search_norm(${param(likePattern(query.q))})`];
+      if (/^\d{1,12}$/.test(query.q)) conditions.push(`o.id = ${param(Number(query.q))}`);
+      where.push(`(${conditions.join(' or ')})`);
+    }
+
+    const limit = param(query.page_size);
+    const offset = param((query.page - 1) * query.page_size);
+    const items = await withSession(pool, user, async (db) => {
+      const { rows } = await db.query(
+        `select o.id, o.status, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
+                o.store_id, s.name as store_name, o.user_id, u.name as user_name,
+                o.client_id, c.name as client_name,
+                count(*) over () as total_count
+           from orders o
+           join clients c on c.id = o.client_id
+           join stores s on s.id = o.store_id
+           join users u on u.id = o.user_id
+          ${where.length ? `where ${where.join(' and ')}` : ''}
+          order by o.created_at desc, o.id desc
+          limit ${limit} offset ${offset}`,
+        params,
+      );
+      return rows;
+    });
+
+    res.json({
+      items: items.map(({ total_count: _, ...row }) => row),
+      total: items[0]?.total_count ?? 0,
+      page: query.page,
+      page_size: query.page_size,
+    });
+  });
+
+  router.get('/:id', async (req, res) => {
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    if (!order) throw new HttpError(404, NOT_FOUND);
+    res.json({ order });
+  });
+
+  router.post('/', async (req, res) => {
+    const user = currentUser(req);
+    const body = orderSchema.parse(req.body);
+    const storeId = resolveStoreId(user, body.store_id);
+
+    const order = await withSession(pool, user, async (db) => {
+      if (user.role === 'admin') await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
+      await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      const { rows } = await db.query<{ id: number }>(
+        `insert into orders (user_id, store_id, client_id, status, notes, confirmed_at)
+         values ($1, $2, $3, $4, $5, case when $4 = 'order' then now() end)
+         returning id`,
+        [user.id, storeId, body.client_id, body.status, body.notes],
+      );
+      const id = rows[0]!.id;
+      await writeOrderItems(db, id, body.items);
+      return loadOrderDetail(db, id);
+    });
+    res.status(201).json({ order });
+  });
+
+  router.put('/:id', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const body = orderSchema.parse(req.body);
+
+    const order = await withSession(pool, user, async (db) => {
+      const { rows } = await db.query<{ status: string; store_id: number }>(
+        'select status, store_id from orders where id = $1 for update',
+        [id],
+      );
+      const current = rows[0];
+      if (!current) throw new HttpError(404, NOT_FOUND);
+      if (current.status === 'order') throw new HttpError(409, 'Pedidos confirmados não podem ser editados.');
+
+      const storeId = user.role === 'admin' && body.store_id ? body.store_id : current.store_id;
+      if (storeId !== current.store_id) await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
+      await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+
+      const previous = await db.query<{ product_id: number; unit_price: number }>(
+        'select product_id, unit_price from order_items where order_id = $1',
+        [id],
+      );
+      await db.query(
+        `update orders
+            set client_id = $2, status = $3, notes = $4, store_id = $5,
+                confirmed_at = case when $3 = 'order' then now() end,
+                updated_at = now()
+          where id = $1`,
+        [id, body.client_id, body.status, body.notes, storeId],
+      );
+      await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
+      return loadOrderDetail(db, id);
+    });
+    res.json({ order });
+  });
+
+  router.post('/:id/convert', async (req, res) => {
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, currentUser(req), async (db) => {
+      const { rowCount } = await db.query(
+        `update orders set status = 'order', confirmed_at = now(), updated_at = now()
+          where id = $1 and status = 'quote'`,
+        [id],
+      );
+      if (!rowCount) {
+        const exists = await db.query('select 1 from orders where id = $1', [id]);
+        if (!exists.rowCount) throw new HttpError(404, NOT_FOUND);
+        throw new HttpError(409, 'Este documento já é um pedido.');
+      }
+      return loadOrderDetail(db, id);
+    });
+    res.json({ order });
+  });
+
+  router.delete('/:id', requireAdmin, async (req, res) => {
+    const id = parseId(req.params.id, NOT_FOUND);
+    const { rowCount } = await withSession(pool, currentUser(req), (db) =>
+      db.query('delete from orders where id = $1', [id]),
+    );
+    if (!rowCount) throw new HttpError(404, NOT_FOUND);
+    res.status(204).end();
+  });
+
+  router.get('/:id/pdf', async (req, res) => {
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    if (!order) throw new HttpError(404, NOT_FOUND);
+    const pdf = await renderOrderPdf(order, config.timeZone);
+    const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${orderFileName(order)}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(pdf);
+  });
+
+  router.post('/:id/whatsapp', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
+    if (!order) throw new HttpError(404, NOT_FOUND);
+
+    const settings = await loadEvolutionSettings(pool);
+    if (!settings) {
+      throw new HttpError(
+        422,
+        'O envio por WhatsApp ainda não foi configurado. Peça ao administrador para preencher a EvolutionAPI em Configurações.',
+        'WHATSAPP_NOT_CONFIGURED',
+      );
+    }
+    // O número é guardado normalizado; só números antigos ou importados precisam de ajuste.
+    const number = /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
+    if (!number) {
+      throw new HttpError(
+        422,
+        'O WhatsApp do cliente é inválido. Corrija o cadastro do cliente e tente de novo.',
+        'WHATSAPP_INVALID_NUMBER',
+      );
+    }
+
+    const pdf = await renderOrderPdf(order, config.timeZone);
+    try {
+      await sendPdfDocument(
+        settings,
+        { number, pdf, fileName: orderFileName(order), caption: orderCaption(order) },
+        config.evolutionTimeoutMs,
+      );
+    } catch (err) {
+      console.error(`Falha ao enviar o pedido ${id} pela EvolutionAPI:`, err);
+      throw new HttpError(502, describeEvolutionError(err), 'WHATSAPP_FAILED');
+    }
+
+    const sentAt = await withSession(pool, user, async (db) => {
+      const { rows } = await db.query<{ sent_at: Date }>(
+        'update orders set sent_at = now() where id = $1 returning sent_at',
+        [id],
+      );
+      return rows[0]?.sent_at ?? null;
+    });
+    res.json({ sent_at: sentAt });
+  });
+
+  return router;
+}

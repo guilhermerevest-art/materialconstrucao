@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Balcão: cinza concreto no fundo, aço na barra superior, laranja de obra
+ * para ações, amarelo de etiqueta de preço só para o total.
+ */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: #f1f3f4;
+  --color-foreground: #1b2631;
+  --color-card: #ffffff;
+  --color-muted: #e9ecee;
+  --color-muted-foreground: #5b6670;
+  --color-border: #d8dde1;
+  --color-input: #c5ccd2;
+  --color-ring: #c2410c;
+
+  --color-primary: #c2410c;
+  --color-primary-hover: #a3360a;
+  --color-primary-soft: #fdeee6;
+  --color-primary-foreground: #ffffff;
+
+  --color-steel: #22303c;
+  --color-steel-hover: #2f4050;
+
+  --color-tag: #ffd233;
+  --color-tag-edge: #e2b300;
+
+  --color-whatsapp: #15803d;
+  --color-whatsapp-hover: #116932;
+
+  --color-destructive: #b42318;
+  --color-destructive-soft: #fdecea;
+  --color-success: #15803d;
+  --color-success-soft: #e7f5ec;
+
+  --color-quote: #93370d;
+  --color-quote-soft: #fef0c7;
+  --color-order: #1d4e89;
+  --color-order-soft: #dce8f5;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Trena: régua amarela da tela de login. */
+@utility tape {
+  background-color: var(--color-tag);
+  background-image:
+    repeating-linear-gradient(90deg, var(--color-foreground) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(90deg, var(--color-foreground) 0 1.5px, transparent 1.5px 40px);
+  background-size:
+    100% 5px,
+    100% 10px;
+  background-repeat: repeat-x;
+  background-position:
+    4px 0,
+    4px 0;
+}
