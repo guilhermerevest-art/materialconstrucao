@@ -65,11 +65,41 @@ describeDb('atualização do banco da VPS', () => {
 
     await migrateToV1(ownerPool);
     const store = await ownerPool.query<{ id: number }>(`insert into stores (name) values ('Loja Centro') returning id`);
-    await ownerPool.query(
-      `insert into users (name, email, password_hash, role, store_id)
-       values ('Administrador', 'admin@empresa.com.br', $1, 'admin', $2)`,
-      [await hashPassword('senha-da-v1'), store.rows[0]!.id],
+    const storeId = store.rows[0]!.id;
+    const hash = await hashPassword('senha-da-v1');
+    // Dois e-mails com o mesmo começo: os dois viram "admin" no login por usuário.
+    const users = await ownerPool.query<{ id: number }>(
+      `insert into users (name, email, password_hash, role, store_id) values
+         ('Administrador', 'admin@empresa.com.br', $1, 'admin', $2),
+         ('Outro Admin', 'admin@outra.com', $1, 'seller', $2)
+       returning id`,
+      [hash, storeId],
     );
+    const client = await ownerPool.query<{ id: number }>(
+      `insert into clients (name, whatsapp) values ('Maria', '5511987654321') returning id`,
+    );
+    const product = await ownerPool.query<{ id: number }>(
+      `insert into products (code, name, unit, price) values ('CIM-50', 'Cimento 50 kg', 'SC', 38.90) returning id`,
+    );
+    // Pedido da v1: orders tem RLS forçado desde a 001, então só entra com o contexto de admin.
+    const db = await ownerPool.connect();
+    try {
+      await db.query('begin');
+      await db.query(`select set_config('app.role', 'admin', true)`);
+      const order = await db.query<{ id: number }>(
+        `insert into orders (user_id, store_id, client_id, status, total_amount)
+         values ($1, $2, $3, 'order', 77.80) returning id`,
+        [users.rows[0]!.id, storeId, client.rows[0]!.id],
+      );
+      await db.query(
+        `insert into order_items (order_id, position, product_id, product_code, product_name, unit, quantity, unit_price)
+         values ($1, 1, $2, 'CIM-50', 'Cimento 50 kg', 'SC', 2, 38.90)`,
+        [order.rows[0]!.id, product.rows[0]!.id],
+      );
+      await db.query('commit');
+    } finally {
+      db.release();
+    }
 
     await runMigrations(ownerPool, () => {});
 
@@ -84,5 +114,17 @@ describeDb('atualização do banco da VPS', () => {
     expect(res.body.user).toMatchObject({ username: 'admin', role: 'admin', store_name: 'Loja Centro' });
     const me = await agent.get('/api/auth/me').set('Host', 'materialconstrucao.vercel.app');
     expect(me.status).toBe(200);
+
+    const orders = await agent.get('/api/orders').set('Host', 'materialconstrucao.vercel.app');
+    expect(orders.status).toBe(200);
+    expect(orders.body.total).toBe(1);
+    const detail = await agent.get(`/api/orders/${orders.body.items[0].id}`).set('Host', 'materialconstrucao.vercel.app');
+    expect(detail.body.order.items).toHaveLength(1);
+
+    const list = await agent.get('/api/users').set('Host', 'materialconstrucao.vercel.app');
+    expect(list.body.items.map((u: { username: string }) => u.username).sort()).toEqual([
+      'admin',
+      `admin-${users.rows[1]!.id}`,
+    ]);
   });
 });

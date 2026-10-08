@@ -42,6 +42,11 @@ alter table order_items add column tenant_id bigint references tenants (id);
 alter table settings   add column tenant_id bigint references tenants (id);
 
 -- 5. Backfill: tudo que existe vai para o tenant 'default' (id = 1).
+-- orders e order_items têm RLS forçado desde a 001, e o FORCE vale também para
+-- o dono das tabelas: sem desligá-lo aqui, o update não enxerga nenhum pedido e
+-- o "set not null" abaixo falha com "contains null values". Volta logo depois.
+alter table orders      no force row level security;
+alter table order_items no force row level security;
 update stores      set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
 update users       set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
 update clients     set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
@@ -49,6 +54,8 @@ update products    set tenant_id = (select id from tenants where slug = 'default
 update orders      set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
 update order_items set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
 update settings    set tenant_id = (select id from tenants where slug = 'default') where tenant_id is null;
+alter table orders      force row level security;
+alter table order_items force row level security;
 
 -- 6. Agora sim, NOT NULL.
 alter table stores      alter column tenant_id set not null;
@@ -75,6 +82,10 @@ create unique index settings_tenant_key on settings (tenant_id);
 alter table users add column username text;
 -- Backfill: o e-mail antigo vira username. Pega a parte antes do @, lowercased.
 update users set username = lower(split_part(email, '@', 1)) where username is null;
+-- E-mails diferentes com o mesmo começo (joao@a.com e joao@b.com): do segundo
+-- em diante, o usuário ganha o id no fim, para caber no índice único abaixo.
+update users u set username = u.username || '-' || u.id
+ where exists (select 1 from users o where o.tenant_id = u.tenant_id and o.username = u.username and o.id < u.id);
 alter table users alter column username set not null;
 -- Email continua existindo (decisão: opcional no cadastro, mas preservamos o
 -- antigo). Email não é mais unique global e nem obrigatório.
