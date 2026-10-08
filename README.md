@@ -150,8 +150,12 @@ DATABASE_URL='postgresql://...?sslmode=require' npm run db:seed -- --email voce@
 ```
 
 Sem `--password`, o seed gera uma senha e mostra no terminal. Troque-a em
-"Alterar senha" depois do primeiro acesso. Rode `db:migrate` de novo sempre que
-houver arquivo novo em `server/migrations/`.
+"Alterar senha" depois do primeiro acesso.
+
+Depois disso, as migrações novas de `server/migrations/` rodam sozinhas a cada deploy de
+produção na Vercel (`scripts/vercel-build.sh`), com a `DATABASE_URL` da própria Vercel. Se uma
+migração falhar, o deploy falha e a versão anterior continua no ar; o motivo aparece no log
+do build. Deploys de preview não mexem no banco.
 
 ## Deploy na Vercel
 
