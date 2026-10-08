@@ -17,6 +17,7 @@ import type { AppContext } from '../context.js';
 import { setTenantContext, withSession, withTransaction } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { loginLimiter } from '../lib/loginLimiter.js';
+import { findTenantByHost } from '../lib/tenantDomain.js';
 
 // Hash dummy: usado quando a combinação (tenant_slug, username) não existe,
 // para que o tempo de resposta seja o mesmo em todos os casos (evita enumeração).
@@ -38,12 +39,14 @@ const usernameSchema = z
   .max(32, 'Usuário inválido.');
 
 const loginSchema = z.object({
-  tenant_slug: slugSchema,
+  // Opcional: quem entra por um domínio próprio da lojamestre não informa.
+  tenant_slug: slugSchema.optional(),
   username: usernameSchema,
   password: z.string().min(1, 'Informe a senha.'),
 });
 
 const GENERIC_LOGIN_ERROR = 'Lojamestre, usuário ou senha incorretos.';
+const DOMAIN_LOGIN_ERROR = 'Usuário ou senha incorretos.';
 
 const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Informe a senha atual.'),
@@ -97,8 +100,20 @@ function warnIfCookieWillBeDropped(req: Request, config: Config) {
 export function authRouter(ctx: AppContext) {
   const router = Router();
 
+  // Lojamestre do domínio acessado. O login usa para esconder o campo "Lojamestre".
+  router.get('/tenant', async (req, res) => {
+    const tenant = await findTenantByHost(ctx.pool, req.hostname);
+    res.json({ tenant: tenant?.active ? { name: tenant.name } : null });
+  });
+
   router.post('/login', async (req, res) => {
-    const { tenant_slug, username, password } = loginSchema.parse(req.body);
+    const body = loginSchema.parse(req.body);
+    const { username, password } = body;
+    // Num domínio próprio, vale a lojamestre dele, mesmo que o corpo traga outra.
+    const domainTenant = await findTenantByHost(ctx.pool, req.hostname);
+    const tenant_slug = domainTenant?.slug ?? body.tenant_slug;
+    if (!tenant_slug) throw new HttpError(400, 'Informe a lojamestre.');
+    const loginError = domainTenant ? DOMAIN_LOGIN_ERROR : GENERIC_LOGIN_ERROR;
     const key = `${req.ip}|${tenant_slug}|${username}`;
     if (await loginLimiter.isBlocked(ctx.pool, key)) {
       throw new HttpError(429, 'Muitas tentativas sem sucesso. Aguarde 15 minutos e tente de novo.');
@@ -108,7 +123,7 @@ export function authRouter(ctx: AppContext) {
     const valid = await verifyPassword(password, found?.password_hash ?? DUMMY_HASH);
     if (!found || !valid) {
       await loginLimiter.fail(ctx.pool, key);
-      throw new HttpError(401, GENERIC_LOGIN_ERROR);
+      throw new HttpError(401, loginError);
     }
     if (!found.tenant_active) {
       await loginLimiter.fail(ctx.pool, key);

@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Globe, Plus } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { toast } from 'sonner';
@@ -7,14 +7,94 @@ import { BrandMark, EmptyState, PageHeader } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, Textarea } from '@/components/ui/input';
 import { Alert, Badge, Skeleton } from '@/components/ui/misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { ApiError } from '@/lib/api';
 import { useDocumentTitle } from '@/lib/hooks';
-import { useCreateTenant, useMeSuper, useSuperLogout, useSuperTenants } from '@/lib/superAuth';
+import {
+  useCreateTenant,
+  useMeSuper,
+  useSuperLogout,
+  useSuperTenants,
+  useUpdateTenantDomains,
+} from '@/lib/superAuth';
 import type { Tenant } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+/** Um domínio por linha (ou separados por vírgula/espaço). */
+function parseDomains(text: string) {
+  return text
+    .split(/[\s,;]+/)
+    .map((d) => d.trim())
+    .filter(Boolean);
+}
+
+const DOMAINS_HINT =
+  'Um por linha, ex.: pedidos.lojadojoao.com.br. Quem entrar por esses endereços não precisa informar a lojamestre. ' +
+  'Cada domínio também precisa ser adicionado no projeto da Vercel.';
+
+function DomainsDialog({ tenant, onOpenChange }: { tenant: Tenant | null; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
+  const update = useUpdateTenantDomains();
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenant) return;
+    setText(tenant.domains.join('\n'));
+    setError(null);
+  }, [tenant]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!tenant) return;
+    setError(null);
+    update.mutate(
+      { tenantId: tenant.id, domains: parseDomains(text) },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['super-tenants'] });
+          toast.success(`Domínios de "${tenant.name}" salvos.`);
+          onOpenChange(false);
+        },
+        onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível salvar os domínios.'),
+      },
+    );
+  }
+
+  return (
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Domínios de {tenant?.name}</DialogTitle>
+          <DialogDescription>{DOMAINS_HINT}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="grid gap-4">
+          {error && <Alert variant="danger" title={error} />}
+          <Field label="Domínios" htmlFor="tenant-domains-edit">
+            <Textarea
+              id="tenant-domains-edit"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              spellCheck={false}
+              autoFocus
+            />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={update.isPending}>
+              Salvar domínios
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function NewTenantDialog({
   open,
@@ -31,6 +111,7 @@ function NewTenantDialog({
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
+  const [domains, setDomains] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,6 +122,7 @@ function NewTenantDialog({
     setAdminUsername('');
     setAdminPassword('');
     setAdminEmail('');
+    setDomains('');
     setError(null);
   }, [open]);
 
@@ -67,6 +149,7 @@ function NewTenantDialog({
         admin_username: cleanUsername,
         admin_password: adminPassword,
         ...(cleanEmail ? { admin_email: cleanEmail } : {}),
+        domains: parseDomains(domains),
       },
       {
         onSuccess: ({ tenant, admin }) => {
@@ -98,7 +181,7 @@ function NewTenantDialog({
             <Field
               label="Slug"
               htmlFor="tenant-slug"
-              hint="Identificador que aparece na URL. Ex: baixeiro → lojamestre.baixeiro.app.br"
+              hint="Digitado no login de quem entra pelo endereço geral, sem domínio próprio."
             >
               <Input
                 id="tenant-slug"
@@ -162,6 +245,15 @@ function NewTenantDialog({
               required
             />
           </Field>
+          <Field label="Domínios (opcional)" htmlFor="tenant-domains" hint={DOMAINS_HINT}>
+            <Textarea
+              id="tenant-domains"
+              value={domains}
+              onChange={(e) => setDomains(e.target.value)}
+              rows={2}
+              spellCheck={false}
+            />
+          </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
@@ -183,6 +275,7 @@ export function SuperTenantsPage() {
   const tenants = useSuperTenants();
   const logout = useSuperLogout();
   const [creating, setCreating] = useState(false);
+  const [editingDomains, setEditingDomains] = useState<Tenant | null>(null);
 
   if (me.isPending) {
     return (
@@ -250,10 +343,12 @@ export function SuperTenantsPage() {
               <TR>
                 <TH className="pl-4">Slug</TH>
                 <TH>Nome</TH>
+                <TH>Domínios</TH>
                 <TH className="text-right">Lojas</TH>
                 <TH className="text-right">Usuários</TH>
                 <TH>Situação</TH>
-                <TH className="pr-4">Criada em</TH>
+                <TH>Criada em</TH>
+                <TH className="pr-4" />
               </TR>
             </THead>
             <TBody>
@@ -261,6 +356,13 @@ export function SuperTenantsPage() {
                 <TR key={tenant.id} className={cn(!tenant.active && 'text-muted-foreground')}>
                   <TD className="pl-4 font-mono text-[13px]">{tenant.slug}</TD>
                   <TD className="font-medium">{tenant.name}</TD>
+                  <TD className="text-[13px]">
+                    {tenant.domains.length ? (
+                      tenant.domains.map((d) => <div key={d}>{d}</div>)
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TD>
                   <TD className="text-right tabular-nums">{tenant.stores_count}</TD>
                   <TD className="text-right tabular-nums">{tenant.users_count}</TD>
                   <TD>
@@ -269,6 +371,12 @@ export function SuperTenantsPage() {
                     </Badge>
                   </TD>
                   <TD className="text-muted-foreground">{formatDate(tenant.created_at)}</TD>
+                  <TD className="pr-4 text-right">
+                    <Button size="sm" variant="outline" onClick={() => setEditingDomains(tenant)}>
+                      <Globe />
+                      Domínios
+                    </Button>
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -277,6 +385,7 @@ export function SuperTenantsPage() {
       </Card>
 
       <NewTenantDialog open={creating} onOpenChange={setCreating} />
+      <DomainsDialog tenant={editingDomains} onOpenChange={(open) => !open && setEditingDomains(null)} />
     </div>
   );
 }

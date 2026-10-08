@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type pg from 'pg';
 import { z } from 'zod';
 import {
   authenticateSuper,
@@ -13,6 +14,7 @@ import {
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { setTenantContext, withTransaction } from '../db/session.js';
+import { normalizeDomain } from '../lib/tenantDomain.js';
 
 const slugSchema = z
   .string()
@@ -37,6 +39,24 @@ const superLoginSchema = z.object({
   password: z.string().min(1, 'Informe a senha.'),
 });
 
+// Lista de domínios próprios da lojamestre, já normalizados e sem repetição.
+const domainsSchema = z
+  .array(z.string())
+  .max(20, 'No máximo 20 domínios por lojamestre.')
+  .transform((list, ctx) => {
+    const domains = new Set<string>();
+    for (const raw of list) {
+      if (!raw.trim()) continue;
+      const domain = normalizeDomain(raw);
+      if (!domain) {
+        ctx.addIssue({ code: 'custom', message: `Domínio inválido: ${raw.trim()}` });
+        return z.NEVER;
+      }
+      domains.add(domain);
+    }
+    return [...domains];
+  });
+
 const createTenantSchema = z.object({
   slug: slugSchema,
   name: z.string().trim().min(2, 'Informe o nome da lojamestre.').max(120),
@@ -44,7 +64,10 @@ const createTenantSchema = z.object({
   admin_username: usernameSchema,
   admin_password: passwordSchema,
   admin_email: z.string().trim().toLowerCase().pipe(z.email('E-mail inválido.')).optional(),
+  domains: domainsSchema.optional(),
 });
+
+const updateDomainsSchema = z.object({ domains: domainsSchema });
 
 const renameAdminSchema = z.object({
   tenant_id: z.number().int().positive('Lojamestre inválida.'),
@@ -86,8 +109,20 @@ export function superRouter(ctx: AppContext) {
 
   router.get('/tenants', async (_req, res) => {
     const items = await withTransaction(ctx.pool, async (db) => {
-      const { rows } = await db.query<{ id: number; slug: string; name: string; active: boolean; created_at: Date }>(
-        'select id, slug, name, active, created_at from tenants order by created_at desc',
+      const { rows } = await db.query<{
+        id: number;
+        slug: string;
+        name: string;
+        active: boolean;
+        created_at: Date;
+        domains: string[];
+      }>(
+        `select t.id, t.slug, t.name, t.active, t.created_at,
+                coalesce(array_agg(d.domain order by d.domain) filter (where d.id is not null), '{}') as domains
+           from tenants t
+           left join tenant_domains d on d.tenant_id = t.id
+          group by t.id
+          order by t.created_at desc`,
       );
       // stores e users têm RLS por lojamestre: cada contagem roda no contexto dela.
       const result = [];
@@ -136,11 +171,25 @@ export function superRouter(ctx: AppContext) {
 
       // Settings zeradas para o lojamestre novo.
       await db.query('insert into settings (tenant_id) values ($1)', [tenantId]);
+      await saveDomains(db, tenantId, body.domains ?? []);
 
       return { tenant: tenant.rows[0], admin: admin.rows[0] };
     });
 
     res.status(201).json(result);
+  });
+
+  // Troca a lista de domínios próprios da lojamestre pela enviada.
+  router.put('/tenants/:id/domains', async (req, res) => {
+    const tenantId = z.coerce.number().int().positive().parse(req.params.id);
+    const { domains } = updateDomainsSchema.parse(req.body);
+    await withTransaction(ctx.pool, async (db) => {
+      const found = await db.query('select 1 from tenants where id = $1', [tenantId]);
+      if (!found.rowCount) throw new HttpError(404, 'Lojamestre não encontrada.');
+      await db.query('delete from tenant_domains where tenant_id = $1', [tenantId]);
+      await saveDomains(db, tenantId, domains);
+    });
+    res.json({ domains });
   });
 
   // Renomeia o admin legado que vinha da v1 (login por email) para username.
@@ -164,4 +213,17 @@ export function superRouter(ctx: AppContext) {
   });
 
   return router;
+}
+async function saveDomains(db: pg.PoolClient, tenantId: number, domains: string[]) {
+  for (const domain of domains) {
+    const taken = await db.query<{ name: string }>(
+      `select t.name from tenant_domains d join tenants t on t.id = d.tenant_id
+        where lower(d.domain) = $1 and d.tenant_id <> $2`,
+      [domain, tenantId],
+    );
+    if (taken.rowCount) {
+      throw new HttpError(409, `O domínio ${domain} já está na lojamestre "${taken.rows[0]!.name}".`);
+    }
+    await db.query('insert into tenant_domains (tenant_id, domain) values ($1, $2)', [tenantId, domain]);
+  }
 }

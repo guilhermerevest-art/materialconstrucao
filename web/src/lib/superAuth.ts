@@ -65,10 +65,17 @@ export function useCreateTenant() {
       admin_username: string;
       admin_password: string;
       admin_email?: string;
+      domains?: string[];
     }) =>
       api<{
         tenant: { id: number; slug: string; name: string; created_at: string };
         admin: { id: number; username: string };
       }>('/super/tenants', { method: 'POST', body: input }),
+  });
+}
+export function useUpdateTenantDomains() {
+  return useMutation({
+    mutationFn: ({ tenantId, domains }: { tenantId: number; domains: string[] }) =>
+      api<{ domains: string[] }>(`/super/tenants/${tenantId}/domains`, { method: 'PUT', body: { domains } }),
   });
 }
