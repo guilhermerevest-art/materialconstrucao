@@ -122,6 +122,32 @@ describeDb('API com banco de teste', () => {
       expect((await seller.get('/api/auth/me')).status).toBe(401);
     });
 
+    it('salva usuário sem e-mail, como a tela envia (email null, senha vazia)', async () => {
+      const admin = await login(app, 'admin');
+      const edited = await admin.put(`/api/users/${f.adminId}`).send({
+        name: 'Admin',
+        username: 'admin',
+        email: null,
+        role: 'admin',
+        store_id: f.storeA,
+        password: '',
+        active: true,
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body.user).toMatchObject({ email: null, store_id: f.storeA });
+
+      const created = await admin.post('/api/users').send({
+        name: 'Sem E-mail',
+        username: 'sem.email',
+        email: null,
+        role: 'seller',
+        store_id: f.storeB,
+        password: 'senha-nova-123',
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.user.email).toBeNull();
+    });
+
     it('troca a senha e mantém a sessão atual', async () => {
       const seller = await login(app, 'vendedor.a');
       const res = await seller

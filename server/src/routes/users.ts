@@ -16,13 +16,11 @@ const usernameSchema = z
   .max(32, 'Usuário muito longo.')
   .regex(/^[a-z0-9._-]+$/, 'Use letras, números, ponto, hífen ou underline.');
 
-const emailSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .pipe(z.email('E-mail inválido.'))
-  .optional()
-  .or(z.literal('').transform(() => undefined));
+// Opcional: vazio ou null (o que a tela manda quando o campo fica em branco) vira "sem e-mail".
+const emailSchema = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '') || v === null ? undefined : v,
+  z.string().trim().toLowerCase().pipe(z.email('E-mail inválido.')).optional(),
+);
 
 const userFields = {
   name: z.string().trim().min(2, 'Informe o nome.').max(120),
