@@ -1,37 +1,35 @@
 -- Catálogo inicial de material de construção (100 produtos, códigos 1 a 100)
 -- para uma lojamestre.
 --
--- Uso: troque o slug em v_slug, se for outra lojamestre, e rode o arquivo
--- inteiro conectado ao banco da aplicação:
+-- Para outra lojamestre, troque 'confere' no passo 2.
 --
---   psql "$DATABASE_URL" -f server/seeds/catalogo-material-construcao.sql
+-- psql:    psql "$DATABASE_URL" -f server/seeds/catalogo-material-construcao.sql
+-- DBeaver: abra o arquivo no editor SQL e execute como script (Alt+X).
 --
--- No DBeaver: abra o arquivo no editor SQL e execute como script (Alt+X). O
--- resultado sai na aba Output (Ctrl+Shift+O). O bloco não tem linhas em branco
--- de propósito: o DBeaver pode tratar linha em branco como fim de comando.
+-- Comandos SQL simples, sem bloco DO e sem comentário ou linha em branco
+-- dentro de um comando: o DBeaver trata linha de comentário como linha em
+-- branco e corta o comando ali.
+--
 -- Pode rodar mais de uma vez: produto com código que a lojamestre já tem é
 -- pulado, nada é alterado nem duplicado. Os preços são de referência; revise
 -- em Administração → Produtos antes de usar nos pedidos.
 --
--- products tem RLS forçado por lojamestre, por isso o bloco define
--- app.tenant_id (só nesta transação) antes de inserir.
-do $$
-declare
-  v_slug      text := 'confere';
-  v_tenant_id bigint;
-  v_inserted  integer;
-  v_total     integer;
-begin
-  select id into v_tenant_id from tenants where lower(slug) = lower(v_slug);
-  if v_tenant_id is null then
-    raise exception 'Lojamestre "%" não encontrada. Slugs existentes: %',
-      v_slug, (select string_agg(slug, ', ' order by slug) from tenants);
-  end if;
-  perform set_config('app.tenant_id', v_tenant_id::text, true);
-  insert into products (tenant_id, code, name, unit, price)
-  select v_tenant_id, v.code, v.name, v.unit, v.price
-    from (values
-      -- Cimentos, argamassas e gesso
+-- products tem RLS forçado por lojamestre: o passo 2 define app.tenant_id
+-- nesta conexão e o passo 5 limpa. Se a lojamestre não existir, o passo 2 não
+-- devolve linha e o passo 3 falha sem gravar nada.
+
+-- 1. Limpa um contexto que tenha sobrado nesta conexão.
+select set_config('app.tenant_id', '', false);
+
+-- 2. Lojamestre que recebe os produtos (deve aparecer 1 linha).
+select id, slug, name, set_config('app.tenant_id', id::text, false) as contexto
+  from tenants
+ where lower(slug) = 'confere';
+
+-- 3. Produtos.
+insert into products (tenant_id, code, name, unit, price)
+select app_tenant_id(), v.code, v.name, v.unit, v.price
+  from (values
       ('1',   'Cimento CP II-E-32 50 kg',                        'SC',  38.90),
       ('2',   'Cimento CP III-40 RS 50 kg',                      'SC',  39.90),
       ('3',   'Cimento CP V-ARI 40 kg',                          'SC',  41.50),
@@ -43,14 +41,12 @@ begin
       ('9',   'Argamassa para reboco 20 kg',                     'SC',  17.90),
       ('10',  'Cal hidratada CH-III 20 kg',                      'SC',  16.90),
       ('11',  'Gesso em pó 40 kg',                               'SC',  44.90),
-      -- Agregados
       ('12',  'Areia fina lavada',                               'M³', 150.00),
       ('13',  'Areia média lavada',                              'M³', 145.00),
       ('14',  'Areia grossa lavada',                             'M³', 140.00),
       ('15',  'Areia média ensacada 20 kg',                      'SC',   7.90),
       ('16',  'Pedrisco (brita 0)',                              'M³', 165.00),
       ('17',  'Brita 1',                                         'M³', 160.00),
-      -- Alvenaria
       ('18',  'Tijolo cerâmico 6 furos 9x14x19',                 'UN',   0.95),
       ('19',  'Tijolo cerâmico 8 furos 9x19x19',                 'UN',   1.35),
       ('20',  'Tijolo maciço comum',                             'UN',   0.85),
@@ -58,7 +54,6 @@ begin
       ('22',  'Bloco de concreto 14x19x39',                      'UN',   4.20),
       ('23',  'Bloco de concreto 19x19x39',                      'UN',   5.40),
       ('24',  'Canaleta de concreto 14x19x39',                   'UN',   4.90),
-      -- Aço e ferragens
       ('25',  'Vergalhão CA-50 6,3 mm barra 12 m',               'BR',  24.90),
       ('26',  'Vergalhão CA-50 8 mm barra 12 m',                 'BR',  36.50),
       ('27',  'Vergalhão CA-50 10 mm barra 12 m',                'BR',  54.90),
@@ -68,19 +63,16 @@ begin
       ('31',  'Tela soldada Q-92 2 x 3 m',                       'PC',  89.00),
       ('32',  'Coluna armada 9x9 cm barra 6 m',                  'PC',  59.90),
       ('33',  'Treliça H8 barra 6 m',                            'PC',  39.90),
-      -- Pregos e fixação
       ('34',  'Prego com cabeça 15x15',                          'KG',  21.90),
       ('35',  'Prego com cabeça 17x27',                          'KG',  18.90),
       ('36',  'Prego com cabeça 18x30',                          'KG',  18.90),
       ('37',  'Bucha de nylon nº 6 caixa com 100',               'CX',  14.90),
       ('38',  'Parafuso chipboard 4,5 x 40 mm caixa com 100',    'CX',  24.90),
       ('39',  'Espuma expansiva de poliuretano 500 ml',          'UN',  32.90),
-      -- Madeiras
       ('40',  'Tábua de pinus 30 cm x 3 m',                      'PC',  34.90),
       ('41',  'Sarrafo de pinus 5 cm x 3 m',                     'PC',   7.90),
       ('42',  'Pontalete de eucalipto 7 x 7 cm x 3 m',           'PC',  18.90),
       ('43',  'Compensado resinado 10 mm 1,10 x 2,20 m',         'PC',  79.90),
-      -- Hidráulica
       ('44',  'Tubo PVC soldável 20 mm barra 6 m',               'BR',  18.90),
       ('45',  'Tubo PVC soldável 25 mm barra 6 m',               'BR',  24.90),
       ('46',  'Tubo PVC soldável 32 mm barra 6 m',               'BR',  44.90),
@@ -98,7 +90,6 @@ begin
       ('58',  'Caixa sifonada 100x100x50 mm com grelha',         'UN',  19.90),
       ('59',  'Adesivo para PVC 175 g',                          'UN',  18.90),
       ('60',  'Fita veda-rosca 18 mm x 25 m',                    'UN',   6.90),
-      -- Elétrica
       ('61',  'Cabo flexível 1,5 mm² rolo 100 m',                'RL', 159.00),
       ('62',  'Cabo flexível 2,5 mm² rolo 100 m',                'RL', 239.00),
       ('63',  'Cabo flexível 4 mm² rolo 100 m',                  'RL', 379.00),
@@ -110,7 +101,6 @@ begin
       ('69',  'Quadro de distribuição de embutir 12 disjuntores','UN',  79.90),
       ('70',  'Fita isolante 19 mm x 20 m',                      'UN',   8.90),
       ('71',  'Lâmpada LED bulbo 9 W luz branca',                'UN',   9.90),
-      -- Tintas e pintura
       ('72',  'Tinta acrílica fosca branco neve 18 L',           'LT', 389.00),
       ('73',  'Tinta látex PVA branca 18 L',                     'LT', 219.00),
       ('74',  'Esmalte sintético branco brilhante 3,6 L',        'LT', 119.00),
@@ -121,21 +111,17 @@ begin
       ('79',  'Rolo de lã 23 cm com cabo',                       'UN',  24.90),
       ('80',  'Trincha 2"',                                      'UN',   9.90),
       ('81',  'Fita crepe 48 mm x 50 m',                         'UN',  12.90),
-      -- Impermeabilização
       ('82',  'Impermeabilizante acrílico 18 L',                 'UN', 259.00),
       ('83',  'Manta asfáltica 3 mm rolo 10 m',                  'RL', 219.00),
       ('84',  'Argamassa polimérica impermeabilizante 18 kg',    'CX',  89.90),
-      -- Pisos e revestimentos
       ('85',  'Porcelanato acetinado 60x60 cm',                  'M²',  79.90),
       ('86',  'Piso cerâmico 45x45 cm PEI 4',                    'M²',  34.90),
       ('87',  'Revestimento cerâmico de parede 30x60 cm',        'M²',  39.90),
       ('88',  'Rejunte flexível cinza 1 kg',                     'KG',   9.90),
       ('89',  'Rejunte flexível branco 1 kg',                    'KG',   9.90),
-      -- Cobertura
       ('90',  'Telha de fibrocimento 2,44 x 1,10 m 6 mm',        'UN',  69.90),
       ('91',  'Telha cerâmica portuguesa',                       'UN',   2.90),
       ('92',  'Cumeeira de fibrocimento 6 mm',                   'UN',  34.90),
-      -- Ferramentas e EPI
       ('93',  'Carrinho de mão 60 L pneu com câmara',            'UN', 249.00),
       ('94',  'Pá de bico com cabo',                             'UN',  59.90),
       ('95',  'Colher de pedreiro 8"',                           'UN',  24.90),
@@ -146,8 +132,9 @@ begin
       ('100', 'Lona plástica preta 4 x 6 m',                     'PC',  39.90)
     ) as v (code, name, unit, price)
   on conflict (tenant_id, lower(code)) where code is not null do nothing;
-  get diagnostics v_inserted = row_count;
-  select count(*) into v_total from products where tenant_id = v_tenant_id;
-  raise notice 'Lojamestre "%" (id %): % produtos inseridos, % no catálogo.',
-    v_slug, v_tenant_id, v_inserted, v_total;
-end $$;
+
+-- 4. Conferência: deve mostrar 100.
+select count(*) as produtos_no_catalogo from products where tenant_id = app_tenant_id();
+
+-- 5. Limpa o contexto.
+select set_config('app.tenant_id', '', false);
