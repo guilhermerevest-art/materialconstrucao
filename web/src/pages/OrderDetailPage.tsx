@@ -212,6 +212,12 @@ export function OrderDetailPage() {
                 <p className="font-semibold">{order.client_name}</p>
                 <p className="text-sm tabular-nums">{formatWhatsapp(order.client_whatsapp)}</p>
               </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Forma de pagamento</p>
+                <p className={order.payment_method_name ? 'font-semibold' : 'text-sm text-muted-foreground'}>
+                  {order.payment_method_name ?? 'Não informada'}
+                </p>
+              </div>
 
               <Button
                 variant="whatsapp"

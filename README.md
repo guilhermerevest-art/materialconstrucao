@@ -124,6 +124,10 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   regra mesmo quando duas pessoas salvam ao mesmo tempo — a segunda recebe o aviso em vez de criar
   a duplicata.
 - Produto usado em pedidos não pode ser excluído; desative-o para tirá-lo da busca.
+- **Forma de pagamento** (opcional) é escolhida no orçamento ou pedido e sai no PDF. O administrador
+  cadastra as formas em Administração → Formas de pagamento; toda lojamestre começa com Dinheiro, PIX,
+  Cartão de débito, Cartão de crédito e Boleto. O pedido guarda o nome da forma da época, e forma usada
+  em pedidos não pode ser excluída, só desativada (sai da lista, mas o orçamento que já a tinha continua com ela).
 
 ## Banco na VPS
 

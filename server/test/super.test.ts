@@ -83,6 +83,11 @@ describeDb('lojamestres e painel /super', () => {
     expect(users.status).toBe(200);
     expect(users.body.items.map((u: { username: string }) => u.username)).toEqual(['admin']);
     expect((await agent.get('/api/stores')).body.items).toEqual([]);
+    // Formas de pagamento mais comuns já vêm cadastradas.
+    const methods = await agent.get('/api/payment-methods');
+    expect(methods.body.items.map((m: { name: string }) => m.name)).toEqual(
+      expect.arrayContaining(['Dinheiro', 'PIX', 'Cartão de débito', 'Cartão de crédito', 'Boleto']),
+    );
   });
 
   it('recusa lojamestre inexistente ou desativada', async () => {

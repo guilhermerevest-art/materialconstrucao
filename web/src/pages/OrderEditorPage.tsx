@@ -16,7 +16,7 @@ import { api, ApiError } from '@/lib/api';
 import { useUser } from '@/lib/auth';
 import { formatOrderNumber, lineTotalCents } from '@/lib/format';
 import { useDocumentTitle, useHotkeys } from '@/lib/hooks';
-import type { Client, Order, OrderStatus, Product, Store } from '@/lib/types';
+import type { Client, Order, OrderStatus, PaymentMethod, Product, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string; hint: string }[] = [
@@ -43,6 +43,7 @@ export function OrderEditorPage() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [status, setStatus] = useState<OrderStatus>('quote');
   const [notes, setNotes] = useState('');
+  const [paymentMethodId, setPaymentMethodId] = useState<number | null>(null);
   const [storeId, setStoreId] = useState<number | null>(user.store_id);
   const [errors, setErrors] = useState<{ client?: string; items?: string; store?: string }>({});
   const dirty = useRef(false);
@@ -61,6 +62,13 @@ export function OrderEditorPage() {
     queryFn: () => api<{ items: Store[] }>('/stores').then((r) => r.items),
     enabled: isAdmin,
   });
+
+  const paymentMethods = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: () => api<{ items: PaymentMethod[] }>('/payment-methods').then((r) => r.items),
+  });
+  // Desativadas saem da lista, menos a que o orçamento já tinha.
+  const paymentOptions = paymentMethods.data?.filter((m) => m.active || m.id === existing.data?.payment_method_id) ?? [];
 
   // Preenche o formulário uma única vez ao abrir um orçamento para edição.
   const loaded = useRef(false);
@@ -81,6 +89,7 @@ export function OrderEditorPage() {
     );
     setStatus(order.status);
     setNotes(order.notes ?? '');
+    setPaymentMethodId(order.payment_method_id);
     setStoreId(order.store_id);
   }, [existing.data]);
 
@@ -102,6 +111,7 @@ export function OrderEditorPage() {
         client_id: client!.id,
         status,
         notes,
+        payment_method_id: paymentMethodId,
         store_id: isAdmin ? storeId : undefined,
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
       };
@@ -338,6 +348,24 @@ export function OrderEditorPage() {
                 </Field>
               )}
 
+              <Field label="Forma de pagamento" htmlFor="forma-pagamento">
+                <NativeSelect
+                  id="forma-pagamento"
+                  value={paymentMethodId ?? ''}
+                  onChange={(e) => {
+                    setPaymentMethodId(e.target.value ? Number(e.target.value) : null);
+                    changed();
+                  }}
+                >
+                  <option value="">Não informada</option>
+                  {paymentOptions.map((method) => (
+                    <option key={method.id} value={method.id}>
+                      {method.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+
               <Field label="Observações" htmlFor="observacoes" hint="Sai no PDF enviado ao cliente.">
                 <Textarea
                   id="observacoes"
@@ -347,7 +375,7 @@ export function OrderEditorPage() {
                     setNotes(e.target.value);
                     changed();
                   }}
-                  placeholder="Entrega, prazo, forma de pagamento..."
+                  placeholder="Entrega, prazo, condições..."
                 />
               </Field>
             </CardContent>

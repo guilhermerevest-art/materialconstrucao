@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth.js';
 import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { ordersRouter } from './routes/orders.js';
+import { paymentMethodsRouter } from './routes/paymentMethods.js';
 import { productsRouter } from './routes/products.js';
 import { settingsRouter } from './routes/settings.js';
 import { storesRouter } from './routes/stores.js';
@@ -51,6 +52,7 @@ export function createApp(ctx: AppContext) {
   api.use('/clients', clientsRouter(ctx));
   api.use('/products', productsRouter(ctx));
   api.use('/orders', ordersRouter(ctx));
+  api.use('/payment-methods', paymentMethodsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));
   api.use('/settings', requireAdmin, settingsRouter(ctx));

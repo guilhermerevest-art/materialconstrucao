@@ -22,6 +22,9 @@ export type OrderDetail = {
   status: OrderStatus;
   total_amount: number;
   notes: string | null;
+  payment_method_id: number | null;
+  /** Nome da forma de pagamento quando o pedido foi salvo. */
+  payment_method_name: string | null;
   confirmed_at: Date | null;
   sent_at: Date | null;
   created_at: Date;
@@ -69,7 +72,7 @@ function withStoreLogo(order: OrderDetail, logo: StoreLogo | null): OrderPdfDeta
 export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<OrderPdfDetail | null> {
   const { rows } = await db.query<OrderPdfRow>(
     `select o.id, o.user_id, o.store_id, o.client_id, o.status, o.total_amount, o.notes,
-            o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
+            o.payment_method_id, o.payment_method_name, o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
             c.name as client_name, c.whatsapp as client_whatsapp,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,

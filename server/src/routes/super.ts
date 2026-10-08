@@ -15,6 +15,7 @@ import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { setTenantContext, withTransaction } from '../db/session.js';
 import { normalizeDomain } from '../lib/tenantDomain.js';
+import { insertDefaultPaymentMethods } from './paymentMethods.js';
 
 const slugSchema = z
   .string()
@@ -176,6 +177,7 @@ export function superRouter(ctx: AppContext) {
 
       // Settings zeradas para o lojamestre novo.
       await db.query('insert into settings (tenant_id) values ($1)', [tenantId]);
+      await insertDefaultPaymentMethods(db, tenantId);
       await saveDomains(db, tenantId, body.domains ?? []);
 
       return { tenant: tenant.rows[0], admin: admin.rows[0] };

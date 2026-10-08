@@ -27,6 +27,7 @@ const MAIN_NAV = [
 const ADMIN_NAV = [
   { to: '/lojas', label: 'Lojas' },
   { to: '/vendedores', label: 'Vendedores' },
+  { to: '/formas-de-pagamento', label: 'Formas de pagamento' },
   { to: '/configuracoes', label: 'Configurações' },
 ];
 

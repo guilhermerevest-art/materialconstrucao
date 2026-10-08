@@ -650,4 +650,92 @@ describeDb('API com banco de teste', () => {
       expect(await totalClientes()).toBe(before);
     });
   });
+
+  describe('formas de pagamento', () => {
+    const items = () => [{ product_id: f.products.cimento, quantity: 1 }];
+
+    it('só o admin cadastra; nome repetido é recusado', async () => {
+      const admin = await login(app, 'admin');
+      const seller = await login(app, 'vendedor.a');
+      expect((await admin.post('/api/payment-methods').send({ name: 'PIX' })).status).toBe(201);
+      const dup = await admin.post('/api/payment-methods').send({ name: ' pix ' });
+      expect(dup.status).toBe(409);
+      expect(dup.body.error).toBe('Já existe uma forma de pagamento com esse nome.');
+      expect((await admin.post('/api/payment-methods').send({ name: '' })).status).toBe(400);
+      expect((await seller.post('/api/payment-methods').send({ name: 'Boleto' })).status).toBe(403);
+      const list = await seller.get('/api/payment-methods');
+      expect(list.status).toBe(200);
+      expect(list.body.items.map((m: { name: string }) => m.name)).toEqual(['PIX']);
+    });
+
+    it('o pedido guarda a forma de pagamento, que sai no detalhe mesmo depois de renomeada', async () => {
+      const admin = await login(app, 'admin');
+      const seller = await login(app, 'vendedor.a');
+      const pix = (await admin.post('/api/payment-methods').send({ name: 'PIX' })).body.payment_method;
+
+      const created = await seller
+        .post('/api/orders')
+        .send({ client_id: f.clientId, status: 'quote', payment_method_id: pix.id, items: items() });
+      expect(created.status).toBe(201);
+      expect(created.body.order).toMatchObject({ payment_method_id: pix.id, payment_method_name: 'PIX' });
+
+      expect((await admin.put(`/api/payment-methods/${pix.id}`).send({ name: 'Pix à vista', active: true })).status).toBe(200);
+      const detail = await seller.get(`/api/orders/${created.body.order.id}`);
+      expect(detail.body.order.payment_method_name).toBe('PIX');
+
+      // Sem forma de pagamento continua valendo; id inexistente não.
+      const none = await seller.post('/api/orders').send({ client_id: f.clientId, status: 'quote', items: items() });
+      expect(none.status).toBe(201);
+      expect(none.body.order.payment_method_id).toBeNull();
+      const unknown = await seller
+        .post('/api/orders')
+        .send({ client_id: f.clientId, status: 'quote', payment_method_id: pix.id + 1000, items: items() });
+      expect(unknown.status).toBe(400);
+    });
+
+    it('forma desativada não entra em pedido novo, mas o orçamento que já tinha continua editável', async () => {
+      const admin = await login(app, 'admin');
+      const seller = await login(app, 'vendedor.a');
+      const boleto = (await admin.post('/api/payment-methods').send({ name: 'Boleto' })).body.payment_method;
+      const quote = (
+        await seller
+          .post('/api/orders')
+          .send({ client_id: f.clientId, status: 'quote', payment_method_id: boleto.id, items: items() })
+      ).body.order;
+
+      expect((await admin.put(`/api/payment-methods/${boleto.id}`).send({ name: 'Boleto', active: false })).status).toBe(200);
+      const blocked = await seller
+        .post('/api/orders')
+        .send({ client_id: f.clientId, status: 'quote', payment_method_id: boleto.id, items: items() });
+      expect(blocked.status).toBe(400);
+      expect(blocked.body.error).toContain('desativada');
+
+      const edited = await seller
+        .put(`/api/orders/${quote.id}`)
+        .send({ client_id: f.clientId, status: 'order', payment_method_id: boleto.id, items: items() });
+      expect(edited.status).toBe(200);
+      expect(edited.body.order.payment_method_name).toBe('Boleto');
+    });
+
+    it('não exclui forma usada em pedido; exclui a que não foi usada', async () => {
+      const admin = await login(app, 'admin');
+      const used = (await admin.post('/api/payment-methods').send({ name: 'Dinheiro' })).body.payment_method;
+      const unused = (await admin.post('/api/payment-methods').send({ name: 'Cheque' })).body.payment_method;
+      await admin.post('/api/orders').send({
+        client_id: f.clientId,
+        status: 'order',
+        store_id: f.storeA,
+        payment_method_id: used.id,
+        items: items(),
+      });
+      const list = await admin.get('/api/payment-methods');
+      expect(list.body.items.find((m: { id: number }) => m.id === used.id).orders_count).toBe(1);
+
+      const inUse = await admin.delete(`/api/payment-methods/${used.id}`);
+      expect(inUse.status).toBe(409);
+      expect(inUse.body.error).toContain('Desative-a');
+      expect((await admin.delete(`/api/payment-methods/${unused.id}`)).status).toBe(204);
+      expect((await admin.delete(`/api/payment-methods/${unused.id}`)).status).toBe(404);
+    });
+  });
 });

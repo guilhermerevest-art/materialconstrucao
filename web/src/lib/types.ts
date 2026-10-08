@@ -40,6 +40,15 @@ export type Product = {
   created_at: string;
 };
 
+export type PaymentMethod = {
+  id: number;
+  name: string;
+  active: boolean;
+  /** Pedidos e orçamentos que usam esta forma. Com algum, ela só pode ser desativada. */
+  orders_count: number;
+  created_at: string;
+};
+
 export type OrderStatus = 'quote' | 'order';
 
 export type OrderSummary = {
@@ -77,6 +86,9 @@ export type Order = {
   status: OrderStatus;
   total_amount: number;
   notes: string | null;
+  payment_method_id: number | null;
+  /** Nome da forma de pagamento quando o pedido foi salvo. */
+  payment_method_name: string | null;
   confirmed_at: string | null;
   sent_at: string | null;
   created_at: string;

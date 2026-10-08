@@ -21,6 +21,7 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   clients_tenant_whatsapp_key: 'Já existe um cliente com este WhatsApp.',
   tenant_domains_domain_key: 'Este domínio já está em outra lojamestre.',
   tenants_slug_key: 'Já existe uma lojamestre com esse slug.',
+  payment_methods_tenant_name_key: 'Já existe uma forma de pagamento com esse nome.',
 };
 
 const IN_USE_MESSAGES: Record<string, string> = {
@@ -29,6 +30,8 @@ const IN_USE_MESSAGES: Record<string, string> = {
     'Este produto aparece em pedidos e não pode ser excluído. Desative-o para tirá-lo das buscas.',
   users_store_id_fkey: 'Esta loja tem usuários vinculados e não pode ser excluída.',
   orders_store_id_fkey: 'Esta loja tem pedidos registrados e não pode ser excluída.',
+  orders_payment_method_id_fkey:
+    'Esta forma de pagamento aparece em pedidos e não pode ser excluída. Desative-a para tirá-la da lista.',
 };
 
 const CHECK_MESSAGES: Record<string, string> = {

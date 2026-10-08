@@ -25,6 +25,7 @@ const orderSchema = z.object({
   status: z.enum(['quote', 'order'], 'Escolha entre orçamento e pedido.'),
   notes: optionalText(1000),
   store_id: z.number().int().positive().nullable().optional(),
+  payment_method_id: z.number().int().positive().nullable().default(null),
   items: z
     .array(itemSchema, 'Adicione pelo menos um produto.')
     .min(1, 'Adicione pelo menos um produto.')
@@ -61,6 +62,24 @@ function resolveStoreId(user: AuthUser, requested: number | null | undefined): n
 async function assertExists(db: pg.PoolClient, table: 'clients' | 'stores', id: number, message: string) {
   const { rowCount } = await db.query(`select 1 from ${table} where id = $1`, [id]);
   if (!rowCount) throw new HttpError(400, message);
+}
+
+/**
+ * Nome da forma de pagamento a gravar no pedido. Forma desativada só vale se o
+ * orçamento já estava com ela (como produto desativado que já estava no carrinho).
+ */
+async function resolvePaymentMethod(db: pg.PoolClient, id: number | null, currentId: number | null = null) {
+  if (id === null) return null;
+  const { rows } = await db.query<{ name: string; active: boolean }>(
+    'select name, active from payment_methods where id = $1',
+    [id],
+  );
+  const method = rows[0];
+  if (!method) throw new HttpError(400, 'Forma de pagamento não encontrada. Escolha de novo.');
+  if (!method.active && id !== currentId) {
+    throw new HttpError(400, `A forma de pagamento "${method.name}" está desativada. Escolha outra.`);
+  }
+  return method.name;
 }
 
 export function orderCaption(order: OrderDetail) {
@@ -147,11 +166,12 @@ export function ordersRouter(ctx: AppContext) {
     const order = await withSession(pool, user, async (db) => {
       if (user.role === 'admin') await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id);
       const { rows } = await db.query<{ id: number }>(
-        `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, confirmed_at)
-         values ($1, $2, $3, $4, $5, $6, case when $5 = 'order' then now() end)
+        `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, case when $5 = 'order' then now() end)
          returning id`,
-        [user.tenant_id, user.id, storeId, body.client_id, body.status, body.notes],
+        [user.tenant_id, user.id, storeId, body.client_id, body.status, body.notes, body.payment_method_id, paymentMethodName],
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
@@ -166,8 +186,8 @@ export function ordersRouter(ctx: AppContext) {
     const body = orderSchema.parse(req.body);
 
     const order = await withSession(pool, user, async (db) => {
-      const { rows } = await db.query<{ status: string; store_id: number }>(
-        'select status, store_id from orders where id = $1 for update',
+      const { rows } = await db.query<{ status: string; store_id: number; payment_method_id: number | null }>(
+        'select status, store_id, payment_method_id from orders where id = $1 for update',
         [id],
       );
       const current = rows[0];
@@ -177,6 +197,7 @@ export function ordersRouter(ctx: AppContext) {
       const storeId = user.role === 'admin' && body.store_id ? body.store_id : current.store_id;
       if (storeId !== current.store_id) await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id, current.payment_method_id);
 
       const previous = await db.query<{ product_id: number; unit_price: number }>(
         'select product_id, unit_price from order_items where order_id = $1',
@@ -185,10 +206,11 @@ export function ordersRouter(ctx: AppContext) {
       await db.query(
         `update orders
             set client_id = $2, status = $3, notes = $4, store_id = $5,
+                payment_method_id = $6, payment_method_name = $7,
                 confirmed_at = case when $3 = 'order' then now() end,
                 updated_at = now()
           where id = $1`,
-        [id, body.client_id, body.status, body.notes, storeId],
+        [id, body.client_id, body.status, body.notes, storeId, body.payment_method_id, paymentMethodName],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
       return loadOrderDetail(db, id);

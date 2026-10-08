@@ -9,6 +9,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
+import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StoresPage } from './pages/StoresPage';
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
+          { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
         ],
       },

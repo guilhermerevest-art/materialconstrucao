@@ -168,10 +168,12 @@ function drawParties(doc: Doc, order: OrderDetail, y: number): number {
     ['Nome', order.client_name],
     ['WhatsApp', formatWhatsapp(order.client_whatsapp)],
   ]);
-  const serviceHeight = drawInfoBox(doc, left + boxWidth + gap, y, boxWidth, 'Atendimento', [
+  const service: [string, string][] = [
     ['Vendedor', order.user_name],
     ['Loja', order.store_name],
-  ]);
+  ];
+  if (order.payment_method_name) service.push(['Pagamento', order.payment_method_name]);
+  const serviceHeight = drawInfoBox(doc, left + boxWidth + gap, y, boxWidth, 'Atendimento', service);
   const height = Math.max(clientHeight, serviceHeight);
   doc.lineWidth(1).strokeColor(RULE);
   doc.roundedRect(left, y, boxWidth, height, 4).stroke();
