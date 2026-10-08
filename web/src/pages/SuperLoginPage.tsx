@@ -1,12 +1,12 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate, useLocation } from 'react-router';
+import { useNavigate } from 'react-router';
 import { BrandMark } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/misc';
 import { ApiError } from '@/lib/api';
-import { useLogin } from '@/lib/auth';
 import { useDocumentTitle } from '@/lib/hooks';
+import { useSuperLogin } from '@/lib/superAuth';
 
 function AuthShell({ children }: { children: ReactNode }) {
   return (
@@ -15,8 +15,8 @@ function AuthShell({ children }: { children: ReactNode }) {
         <div className="mb-6 flex items-center gap-3">
           <BrandMark className="size-10" />
           <div className="leading-tight">
-            <p className="text-xl font-bold tracking-tight">Balcão</p>
-            <p className="text-sm text-muted-foreground">Pedidos e orçamentos da rede</p>
+            <p className="text-xl font-bold tracking-tight">Balcão · Super</p>
+            <p className="text-sm text-muted-foreground">Painel do revendedor</p>
           </div>
         </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -28,57 +28,51 @@ function AuthShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function LoginPage() {
-  useDocumentTitle('Entrar');
+export function SuperLoginPage() {
+  useDocumentTitle('Super · Entrar');
   const navigate = useNavigate();
-  const location = useLocation();
-  const login = useLogin();
-  const [tenantSlug, setTenantSlug] = useState('');
-  const [username, setUsername] = useState('');
+  const login = useSuperLogin();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   function submit(event: FormEvent) {
     event.preventDefault();
     login.mutate(
-      { tenant_slug: tenantSlug.trim().toLowerCase(), username: username.trim().toLowerCase(), password },
-      { onSuccess: () => navigate(from, { replace: true }) },
+      { email: email.trim().toLowerCase(), password },
+      { onSuccess: () => navigate('/super', { replace: true }) },
     );
   }
 
-  const error = login.error instanceof ApiError ? login.error.message : login.error ? 'Não foi possível entrar.' : null;
+  const error =
+    login.error instanceof ApiError
+      ? login.error.message
+      : login.error
+        ? 'Não foi possível entrar.'
+        : null;
 
   return (
     <AuthShell>
-      <h1 className="text-lg font-semibold">Entrar</h1>
+      <h1 className="text-lg font-semibold">Entrar no painel do super admin</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Crie e gerencie as lojamestres da rede.
+      </p>
       <form onSubmit={submit} className="mt-5 grid gap-4">
         {error && <Alert variant="danger" title={error} />}
-        <Field label="Lojamestre" htmlFor="tenant">
+        <Field label="E-mail" htmlFor="super-email">
           <Input
-            id="tenant"
-            type="text"
-            autoComplete="organization"
-            value={tenantSlug}
-            onChange={(e) => setTenantSlug(e.target.value)}
+            id="super-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             autoFocus
             spellCheck={false}
           />
         </Field>
-        <Field label="Usuário" htmlFor="username">
+        <Field label="Senha" htmlFor="super-senha">
           <Input
-            id="username"
-            type="text"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            spellCheck={false}
-          />
-        </Field>
-        <Field label="Senha" htmlFor="senha">
-          <Input
-            id="senha"
+            id="super-senha"
             type="password"
             autoComplete="current-password"
             value={password}
@@ -93,4 +87,3 @@ export function LoginPage() {
     </AuthShell>
   );
 }
-        

@@ -42,7 +42,7 @@ function clearSessionData(queryClient: QueryClient) {
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { email: string; password: string }) =>
+    mutationFn: (input: { tenant_slug: string; username: string; password: string }) =>
       api<{ user: User }>('/auth/login', { method: 'POST', body: input }),
     onSuccess: ({ user }) => {
       clearSessionData(queryClient);

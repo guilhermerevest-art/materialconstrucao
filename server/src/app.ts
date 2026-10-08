@@ -15,6 +15,7 @@ import { ordersRouter } from './routes/orders.js';
 import { productsRouter } from './routes/products.js';
 import { settingsRouter } from './routes/settings.js';
 import { storesRouter } from './routes/stores.js';
+import { superRouter } from './routes/super.js';
 import { usersRouter } from './routes/users.js';
 
 // Mensagens padrão de validação em português.
@@ -42,6 +43,9 @@ export function createApp(ctx: AppContext) {
 
   const api = express.Router();
   api.use('/auth', authRouter(ctx));
+  // /super (login do revendedor) precisa estar antes do authenticate global
+  // porque ele é público (só o login é; o resto tem authenticateSuper).
+  api.use('/super', superRouter(ctx));
   api.use(authenticate(ctx));
   api.use('/dashboard', dashboardRouter(ctx));
   api.use('/clients', clientsRouter(ctx));

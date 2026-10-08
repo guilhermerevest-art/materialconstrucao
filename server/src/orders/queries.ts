@@ -124,17 +124,18 @@ export async function writeOrderItems(
 
   await db.query('delete from order_items where order_id = $1', [orderId]);
   await db.query(
-    `insert into order_items (order_id, position, product_id, product_code, product_name, unit, quantity, unit_price)
-     select $1, i.position, p.id, p.code, p.name, p.unit, i.quantity, i.unit_price
+    `insert into order_items (tenant_id, order_id, position, product_id, product_code, product_name, unit, quantity, unit_price)
+     select o.tenant_id, $1, i.position, p.id, p.code, p.name, p.unit, i.quantity, i.unit_price
        from unnest($2::int[], $3::bigint[], $4::numeric[], $5::numeric[]) as i(position, product_id, quantity, unit_price)
-       join products p on p.id = i.product_id`,
+       join products p on p.id = i.product_id
+       join orders o on o.id = $1`,
     [
-      orderId,
-      items.map((_, index) => index + 1),
-      items.map((i) => i.product_id),
-      items.map((i) => i.quantity),
-      items.map((i) => previousPrices.get(i.product_id) ?? byId.get(i.product_id)!.price),
-    ],
+        orderId,
+        items.map((_, index) => index + 1),
+        items.map((i) => i.product_id),
+        items.map((i) => i.quantity),
+        items.map((i) => previousPrices.get(i.product_id) ?? byId.get(i.product_id)!.price),
+      ],
   );
   await db.query(
     `update orders

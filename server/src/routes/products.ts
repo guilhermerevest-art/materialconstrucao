@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { currentUser, requireAdmin } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import { queryAs, withSession } from '../db/session.js';
 import { likePattern, optionalQuery, optionalText, pagination, parseId } from '../lib/validation.js';
 
 const productSchema = z.object({
@@ -37,7 +38,7 @@ export function productsRouter(ctx: AppContext) {
     // Vendedor só enxerga produtos ativos.
     const status = user.role === 'admin' ? query.status : 'active';
     const { q, page, page_size } = query;
-    const { rows } = await ctx.pool.query(
+    const { rows } = await queryAs(ctx.pool, user,
       `select ${PRODUCT_COLUMNS}, count(*) over () as total_count
          from products
         where ($1::text is null
@@ -58,30 +59,40 @@ export function productsRouter(ctx: AppContext) {
   });
 
   router.post('/', requireAdmin, async (req, res) => {
+    const me = currentUser(req);
     const body = productSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `insert into products (code, name, unit, price, active) values ($1, $2, $3, $4, $5) returning ${PRODUCT_COLUMNS}`,
-      [body.code, body.name, body.unit, body.price, body.active],
-    );
-    res.status(201).json({ product: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `insert into products (tenant_id, code, name, unit, price, active)
+         values ($1, $2, $3, $4, $5, $6) returning ${PRODUCT_COLUMNS}`,
+        [me.tenant_id, body.code, body.name, body.unit, body.price, body.active],
+      );
+      return rows[0];
+    });
+    res.status(201).json({ product: result });
   });
 
   router.put('/:id', requireAdmin, async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = productSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `update products set code = $2, name = $3, unit = $4, price = $5, active = $6
-        where id = $1
-        returning ${PRODUCT_COLUMNS}`,
-      [id, body.code, body.name, body.unit, body.price, body.active],
-    );
-    if (!rows[0]) throw new HttpError(404, NOT_FOUND);
-    res.json({ product: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `update products set code = $2, name = $3, unit = $4, price = $5, active = $6
+          where id = $1
+          returning ${PRODUCT_COLUMNS}`,
+        [id, body.code, body.name, body.unit, body.price, body.active],
+      );
+      if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+      return rows[0];
+    });
+    res.json({ product: result });
   });
 
   router.delete('/:id', requireAdmin, async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rowCount } = await ctx.pool.query('delete from products where id = $1', [id]);
+    const { rowCount } = await queryAs(ctx.pool, me, 'delete from products where id = $1', [id]);
     if (!rowCount) throw new HttpError(404, NOT_FOUND);
     res.status(204).end();
   });

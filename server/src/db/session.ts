@@ -2,6 +2,7 @@ import type pg from 'pg';
 
 export type SessionUser = {
   id: number;
+  tenant_id: number;
   role: 'admin' | 'seller';
   store_id: number | null;
 };
@@ -22,19 +23,48 @@ export async function withTransaction<T>(pool: pg.Pool, fn: (db: pg.PoolClient) 
   }
 }
 
+/** Seta as variáveis de RLS para o usuário na conexão atual. */
+async function setSessionContext(db: pg.PoolClient, user: SessionUser) {
+  await db.query(
+    `select set_config('app.user_id', $1, true),
+            set_config('app.tenant_id', $2, true),
+            set_config('app.role', $3, true),
+            set_config('app.store_id', $4, true)`,
+    [
+      String(user.id),
+      String(user.tenant_id),
+      user.role,
+      user.store_id == null ? '' : String(user.store_id),
+    ],
+  );
+}
+
 /**
  * Executa fn numa transação com o contexto do usuário que as políticas de RLS
- * leem (app.user_id, app.role, app.store_id). O contexto vale só para esta
- * transação, então a conexão volta limpa para o pool.
+ * leem (app.user_id, app.tenant_id, app.role, app.store_id). O contexto vale só
+ * para esta transação, então a conexão volta limpa para o pool.
  */
 export function withSession<T>(pool: pg.Pool, user: SessionUser, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
   return withTransaction(pool, async (db) => {
-    await db.query(
-      `select set_config('app.user_id', $1, true),
-              set_config('app.role', $2, true),
-              set_config('app.store_id', $3, true)`,
-      [String(user.id), user.role, user.store_id == null ? '' : String(user.store_id)],
-    );
+    await setSessionContext(db, user);
     return fn(db);
+  });
+}
+
+/**
+ * Roda uma query avulsa com o contexto do usuário. Útil para SELECTs/DELETEs
+ * pontuais em que abrir uma transação inteira é exagero. O contexto é setado
+ * em is_local=true no início da transação e resetado automaticamente quando
+ * ela encerra, então a conexão volta limpa para o pool.
+ */
+export async function queryAs<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  pool: pg.Pool,
+  user: SessionUser,
+  text: string,
+  params: ReadonlyArray<unknown> = [],
+): Promise<pg.QueryResult<T>> {
+  return withTransaction(pool, async (db) => {
+    await setSessionContext(db, user);
+    return db.query<T>(text, params as unknown[]);
   });
 }

@@ -154,36 +154,40 @@ export function OrderDetailPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="grid min-w-0 gap-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Itens</CardTitle>
-              <span className="text-sm text-muted-foreground">
-                {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}
-              </span>
-            </CardHeader>
-            <Table>
-              <THead>
-                <TR>
-                  <TH className="pl-5">Código</TH>
-                  <TH>Produto</TH>
-                  <TH className="text-center">Un.</TH>
-                  <TH className="text-right">Qtd.</TH>
-                  <TH className="text-right">Preço unit.</TH>
-                  <TH className="pr-5 text-right">Subtotal</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {order.items.map((item) => (
-                  <TR key={item.id}>
-                    <TD className="pl-5 text-muted-foreground tabular-nums">{item.product_code ?? '-'}</TD>
-                    <TD className="font-medium">{item.product_name}</TD>
-                    <TD className="text-center text-muted-foreground">{item.unit}</TD>
-                    <TD className="text-right tabular-nums">{formatQuantity(item.quantity)}</TD>
-                    <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
-                    <TD className="pr-5 text-right font-semibold tabular-nums">{formatMoney(item.subtotal)}</TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
+            <div className="overflow-x-auto">
+              <div className="min-w-[520px]">
+                <CardHeader>
+                  <CardTitle>Itens</CardTitle>
+                  <span className="text-sm text-muted-foreground">
+                    {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}
+                  </span>
+                </CardHeader>
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH className="pl-5">Código</TH>
+                      <TH>Produto</TH>
+                      <TH className="text-center">Un.</TH>
+                      <TH className="text-right">Qtd.</TH>
+                      <TH className="text-right">Preço unit.</TH>
+                      <TH className="pr-5 text-right">Subtotal</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {order.items.map((item) => (
+                      <TR key={item.id}>
+                        <TD className="pl-5 text-muted-foreground tabular-nums">{item.product_code ?? '-'}</TD>
+                        <TD className="font-medium">{item.product_name}</TD>
+                        <TD className="text-center text-muted-foreground">{item.unit}</TD>
+                        <TD className="text-right tabular-nums">{formatQuantity(item.quantity)}</TD>
+                        <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
+                        <TD className="pr-5 text-right font-semibold tabular-nums">{formatMoney(item.subtotal)}</TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </div>
+            </div>
           </Card>
 
           {order.notes && (

@@ -109,28 +109,30 @@ export function OrdersPage() {
             ))}
           </div>
 
-          <div className="relative min-w-56 flex-1">
+          <div className="relative w-full sm:min-w-56 sm:flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label="Buscar por cliente ou número"
               placeholder="Cliente ou nº do pedido"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="w-full pl-9"
             />
           </div>
 
-          <div className="grid gap-1">
-            <Label htmlFor="filtro-de" className="text-xs text-muted-foreground">
-              De
-            </Label>
-            <Input id="filtro-de" type="date" value={from} onChange={(e) => update({ de: e.target.value })} className="w-40" />
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filtro-ate" className="text-xs text-muted-foreground">
-              Até
-            </Label>
-            <Input id="filtro-ate" type="date" value={to} onChange={(e) => update({ ate: e.target.value })} className="w-40" />
+          <div className="grid gap-1 sm:flex sm:items-end sm:gap-3">
+            <div className="grid gap-1">
+              <Label htmlFor="filtro-de" className="text-xs text-muted-foreground">
+                De
+              </Label>
+              <Input id="filtro-de" type="date" value={from} onChange={(e) => update({ de: e.target.value })} className="w-full sm:w-40" />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="filtro-ate" className="text-xs text-muted-foreground">
+                Até
+              </Label>
+              <Input id="filtro-ate" type="date" value={to} onChange={(e) => update({ ate: e.target.value })} className="w-full sm:w-40" />
+            </div>
           </div>
 
           {isAdmin && (
@@ -138,7 +140,7 @@ export function OrdersPage() {
               aria-label="Loja"
               value={storeId}
               onChange={(e) => update({ loja: e.target.value })}
-              className="w-48"
+              className="w-full sm:w-48"
             >
               <option value="">Todas as lojas</option>
               {stores.data?.map((store) => (

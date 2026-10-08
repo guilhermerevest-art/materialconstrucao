@@ -29,6 +29,7 @@ function UserFormDialog({
   const queryClient = useQueryClient();
   const me = useUser();
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('seller');
   const [storeId, setStoreId] = useState('');
@@ -40,6 +41,7 @@ function UserFormDialog({
   useEffect(() => {
     if (!open) return;
     setName(user?.name ?? '');
+    setUsername(user?.username ?? '');
     setEmail(user?.email ?? '');
     setRole(user?.role ?? 'seller');
     setStoreId(user?.store_id ? String(user.store_id) : stores.length === 1 ? String(stores[0]!.id) : '');
@@ -50,9 +52,12 @@ function UserFormDialog({
 
   const save = useMutation({
     mutationFn: () => {
+      const normalizedUsername = username.trim().toLowerCase();
+      const trimmedEmail = email.trim();
       const body = {
         name,
-        email,
+        username: normalizedUsername,
+        email: trimmedEmail || null,
         role,
         store_id: storeId ? Number(storeId) : null,
         password,
@@ -65,7 +70,7 @@ function UserFormDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['stores'] });
-      toast.success(user ? 'Usuário atualizado.' : 'Usuário criado. Passe o e-mail e a senha para ele entrar.');
+      toast.success(user ? 'Usuário atualizado.' : 'Usuário criado. Passe o usuário e a senha para ele entrar.');
       onOpenChange(false);
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível salvar.'),
@@ -74,6 +79,9 @@ function UserFormDialog({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (role === 'seller' && !storeId) return setError('Selecione a loja do vendedor.');
+    if (!/^[a-z0-9._-]{3,32}$/.test(username.trim().toLowerCase())) {
+      return setError('Usuário precisa ter 3-32 caracteres (letras, números, ponto, hífen ou underline).');
+    }
     if ((!user || password) && password.length < 8) return setError('A senha precisa ter pelo menos 8 caracteres.');
     setError(null);
     save.mutate();
@@ -93,14 +101,27 @@ function UserFormDialog({
           <Field label="Nome" htmlFor="usuario-nome">
             <Input id="usuario-nome" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
           </Field>
-          <Field label="E-mail (usado no login)" htmlFor="usuario-email">
+          <Field
+            label="Usuário"
+            htmlFor="usuario-username"
+            hint="Use letras, números, ponto, hífen ou underline. É o que o vendedor digita para entrar."
+          >
+            <Input
+              id="usuario-username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="off"
+              required
+              spellCheck={false}
+            />
+          </Field>
+          <Field label="E-mail (opcional)" htmlFor="usuario-email">
             <Input
               id="usuario-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="off"
-              required
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -203,6 +224,7 @@ export function UsersPage() {
             <THead>
               <TR>
                 <TH className="pl-4">Nome</TH>
+                <TH>Usuário</TH>
                 <TH>E-mail</TH>
                 <TH>Perfil</TH>
                 <TH>Loja</TH>
@@ -216,7 +238,8 @@ export function UsersPage() {
               {users.data.map((user) => (
                 <TR key={user.id} className={cn(!user.active && 'text-muted-foreground')}>
                   <TD className="pl-4 font-medium">{user.name}</TD>
-                  <TD>{user.email}</TD>
+                  <TD>{user.username}</TD>
+                  <TD className="text-muted-foreground">{user.email ?? '—'}</TD>
                   <TD>{user.role === 'admin' ? 'Administrador' : 'Vendedor'}</TD>
                   <TD>{user.store_name ?? '-'}</TD>
                   <TD>

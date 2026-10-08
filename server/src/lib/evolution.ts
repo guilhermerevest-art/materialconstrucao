@@ -7,12 +7,15 @@ export type EvolutionSettings = {
   token: string;
 };
 
-export async function loadEvolutionSettings(db: Db): Promise<EvolutionSettings | null> {
+export async function loadEvolutionSettings(db: Db, tenantId: number): Promise<EvolutionSettings | null> {
   const { rows } = await db.query<{
     evolution_api_url: string | null;
     evolution_instance: string | null;
     evolution_api_token: string | null;
-  }>('select evolution_api_url, evolution_instance, evolution_api_token from settings where id = 1');
+  }>(
+    'select evolution_api_url, evolution_instance, evolution_api_token from settings where tenant_id = $1',
+    [tenantId],
+  );
   const s = rows[0];
   if (!s?.evolution_api_url || !s.evolution_instance || !s.evolution_api_token) return null;
   return { url: s.evolution_api_url.replace(/\/+$/, ''), instance: s.evolution_instance, token: s.evolution_api_token };

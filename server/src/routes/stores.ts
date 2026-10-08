@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { currentUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import { queryAs, withSession } from '../db/session.js';
 import { optionalText, parseId } from '../lib/validation.js';
 
 const storeSchema = z.object({
@@ -54,43 +56,54 @@ const LOGO_NOT_FOUND = 'Esta loja não tem logo.';
 export function storesRouter(ctx: AppContext) {
   const router = Router();
 
-  router.get('/', async (_req, res) => {
-    const { rows } = await ctx.pool.query(`select ${STORE_COLUMNS} from stores s order by s.name`);
+  router.get('/', async (req, res) => {
+    const me = currentUser(req);
+    const { rows } = await queryAs(ctx.pool, me, `select ${STORE_COLUMNS} from stores s order by s.name`);
     res.json({ items: rows });
   });
 
   router.get('/:id', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rows } = await ctx.pool.query(`select ${STORE_COLUMNS} from stores s where s.id = $1`, [id]);
+    const { rows } = await queryAs(ctx.pool, me, `select ${STORE_COLUMNS} from stores s where s.id = $1`, [id]);
     if (!rows[0]) throw new HttpError(404, NOT_FOUND);
     res.json({ store: rows[0] });
   });
 
   router.post('/', async (req, res) => {
+    const me = currentUser(req);
     const body = storeSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `with inserted as (insert into stores (name, address, phone) values ($1, $2, $3) returning *)
-       select ${STORE_COLUMNS} from inserted s`,
-      [body.name, body.address, body.phone],
-    );
-    res.status(201).json({ store: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `with inserted as (insert into stores (tenant_id, name, address, phone) values ($1, $2, $3, $4) returning *)
+         select ${STORE_COLUMNS} from inserted s`,
+        [me.tenant_id, body.name, body.address, body.phone],
+      );
+      return rows[0];
+    });
+    res.status(201).json({ store: result });
   });
 
   router.put('/:id', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = storeSchema.parse(req.body);
-    const { rows } = await ctx.pool.query(
-      `with updated as (update stores set name = $2, address = $3, phone = $4 where id = $1 returning *)
-       select ${STORE_COLUMNS} from updated s`,
-      [id, body.name, body.address, body.phone],
-    );
-    if (!rows[0]) throw new HttpError(404, NOT_FOUND);
-    res.json({ store: rows[0] });
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query(
+        `with updated as (update stores set name = $2, address = $3, phone = $4 where id = $1 returning *)
+         select ${STORE_COLUMNS} from updated s`,
+        [id, body.name, body.address, body.phone],
+      );
+      if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+      return rows[0];
+    });
+    res.json({ store: result });
   });
 
   router.delete('/:id', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rowCount } = await ctx.pool.query('delete from stores where id = $1', [id]);
+    const { rowCount } = await queryAs(ctx.pool, me, 'delete from stores where id = $1', [id]);
     if (!rowCount) throw new HttpError(404, NOT_FOUND);
     res.status(204).end();
   });
@@ -99,8 +112,9 @@ export function storesRouter(ctx: AppContext) {
   // só o booleano has_logo, para a tela de clientes não baixar base64 de todas as lojas.
 
   router.get('/:id/logo', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rows } = await ctx.pool.query<StoreLogoRow>(
+    const { rows } = await queryAs<StoreLogoRow>(ctx.pool, me,
       'select logo_data, logo_mime from stores where id = $1',
       [id],
     );
@@ -111,6 +125,7 @@ export function storesRouter(ctx: AppContext) {
   });
 
   router.put('/:id/logo', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = logoSchema.parse(req.body);
     const logo = readLogo(body.data);
@@ -118,7 +133,7 @@ export function storesRouter(ctx: AppContext) {
     if (logo.bytes.byteLength > MAX_LOGO_BYTES) {
       throw new HttpError(400, 'A logo deve ter no máximo 500 KB.');
     }
-    const { rows } = await ctx.pool.query(
+    const { rows } = await queryAs(ctx.pool, me,
       `with updated as (update stores set logo_data = $2, logo_mime = $3 where id = $1 returning *)
        select ${STORE_COLUMNS} from updated s`,
       [id, logo.data, body.mime],
@@ -128,10 +143,11 @@ export function storesRouter(ctx: AppContext) {
   });
 
   router.delete('/:id/logo', async (req, res) => {
+    const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     // Update, não delete: a loja precisa existir, mas apagar a logo de uma loja que
     // já não tem logo não é erro.
-    const { rowCount } = await ctx.pool.query(
+    const { rowCount } = await queryAs(ctx.pool, me,
       'update stores set logo_data = null, logo_mime = null where id = $1',
       [id],
     );

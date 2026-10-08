@@ -4,7 +4,7 @@ import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { ForgotPasswordPage, LoginPage } from './pages/LoginPage';
+import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
@@ -12,6 +12,8 @@ import { OrdersPage } from './pages/OrdersPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StoresPage } from './pages/StoresPage';
+import { SuperLoginPage } from './pages/SuperLoginPage';
+import { SuperTenantsPage } from './pages/SuperTenantsPage';
 import { UsersPage } from './pages/UsersPage';
 
 function FullPageSpinner() {
@@ -65,9 +67,13 @@ export const router = createBrowserRouter([
     element: <GuestOnly />,
     children: [
       { path: '/login', element: <LoginPage /> },
-      { path: '/esqueci-senha', element: <ForgotPasswordPage /> },
     ],
   },
+  // /super não passa por GuestOnly: o cookie oms_super_session não compartilha
+  // a sessão da lojamestre, então um super admin pode ficar logado ao mesmo
+  // tempo que um vendedor.
+  { path: '/super/login', element: <SuperLoginPage /> },
+  { path: '/super', element: <SuperTenantsPage /> },
   {
     path: '/',
     element: <RequireAuth />,

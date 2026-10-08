@@ -3,7 +3,8 @@ export type Role = 'admin' | 'seller';
 export type User = {
   id: number;
   name: string;
-  email: string;
+  username: string;
+  email: string | null;
   role: Role;
   store_id: number | null;
   store_name: string | null;
@@ -102,6 +103,22 @@ export type Settings = {
   has_token: boolean;
   token_hint: string | null;
   updated_at: string;
+};
+
+export type Tenant = {
+  id: number;
+  slug: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+  stores_count: number;
+  users_count: number;
+};
+
+export type SuperAdmin = {
+  id: number;
+  email: string;
+  active: boolean;
 };
 
 export type Dashboard = {

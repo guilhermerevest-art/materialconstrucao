@@ -18,23 +18,27 @@ const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
 
 describeDb('API com banco de teste', () => {
   let pool: pg.Pool;
+  let loginPool: pg.Pool;
+  let adminPool: pg.Pool;
   let app: ReturnType<typeof createApp>;
   let f: Fixtures;
   let evolution: Awaited<ReturnType<typeof startFakeEvolution>>;
 
   beforeAll(async () => {
-    ({ pool, app } = setupApp(TEST_DATABASE_URL!));
+    ({ pool, loginPool, app, adminPool } = setupApp(TEST_DATABASE_URL!));
     evolution = await startFakeEvolution();
   });
 
   afterAll(async () => {
     await evolution?.close();
     await pool?.end();
+    await loginPool?.end();
+    await adminPool?.end();
   });
 
   beforeEach(async () => {
-    await resetDatabase(pool);
-    f = await seedFixtures(pool);
+    await resetDatabase(pool, adminPool);
+    f = await seedFixtures(pool, adminPool);
     evolution.requests.length = 0;
     evolution.respondWith(201, { key: { id: 'MSG1' }, status: 'PENDING' });
   });
@@ -64,11 +68,15 @@ describeDb('API com banco de teste', () => {
 
   describe('autenticação', () => {
     it('recusa senha errada e aceita a correta', async () => {
-      const wrong = await request(app).post('/api/auth/login').send({ email: 'vendedor.a@teste.local', password: 'x' });
+      const wrong = await request(app)
+        .post('/api/auth/login')
+        .send({ tenant_slug: f.slug, username: 'vendedor.a', password: 'x' });
       expect(wrong.status).toBe(401);
 
       const agent = request.agent(app);
-      const ok = await agent.post('/api/auth/login').send({ email: 'VENDEDOR.A@teste.local', password: PASSWORD });
+      const ok = await agent
+        .post('/api/auth/login')
+        .send({ tenant_slug: f.slug, username: 'VENDEDOR.A', password: PASSWORD });
       expect(ok.status).toBe(200);
       expect(ok.body.user).toMatchObject({ role: 'seller', store_id: f.storeA, store_name: 'Loja A' });
       expect(ok.headers['set-cookie']?.[0]).toMatch(/oms_session=.*HttpOnly/);
@@ -80,15 +88,19 @@ describeDb('API com banco de teste', () => {
 
     it('bloqueia o login depois de 10 senhas erradas seguidas', async () => {
       for (let i = 0; i < 10; i++) {
-        const res = await request(app).post('/api/auth/login').send({ email: 'vendedor.a@teste.local', password: 'errada' });
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ tenant_slug: f.slug, username: 'vendedor.a', password: 'errada' });
         expect(res.status).toBe(401);
       }
       const blocked = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'vendedor.a@teste.local', password: PASSWORD });
+        .send({ tenant_slug: f.slug, username: 'vendedor.a', password: PASSWORD });
       expect(blocked.status).toBe(429);
       // Outro usuário no mesmo computador continua entrando.
-      const other = await request(app).post('/api/auth/login').send({ email: 'vendedor.b@teste.local', password: PASSWORD });
+      const other = await request(app)
+        .post('/api/auth/login')
+        .send({ tenant_slug: f.slug, username: 'vendedor.b', password: PASSWORD });
       expect(other.status).toBe(200);
     });
 
@@ -98,10 +110,11 @@ describeDb('API com banco de teste', () => {
     });
 
     it('derruba a sessão quando o admin desativa o usuário', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
-      const admin = await login(app, 'admin@teste.local');
+      const seller = await login(app, 'vendedor.a');
+      const admin = await login(app, 'admin');
       const res = await admin.put(`/api/users/${f.sellerAId}`).send({
         name: 'Vendedor A',
+        username: 'vendedor.a',
         email: 'vendedor.a@teste.local',
         role: 'seller',
         store_id: f.storeA,
@@ -112,20 +125,22 @@ describeDb('API com banco de teste', () => {
     });
 
     it('troca a senha e mantém a sessão atual', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await seller
         .post('/api/auth/change-password')
         .send({ current_password: PASSWORD, new_password: 'nova-senha-123' });
       expect(res.status).toBe(204);
       expect((await seller.get('/api/auth/me')).status).toBe(200);
-      const old = await request(app).post('/api/auth/login').send({ email: 'vendedor.a@teste.local', password: PASSWORD });
+      const old = await request(app)
+        .post('/api/auth/login')
+        .send({ tenant_slug: f.slug, username: 'vendedor.a', password: PASSWORD });
       expect(old.status).toBe(401);
     });
   });
 
   describe('pedidos', () => {
     it('cria orçamento com 3 itens e calcula o total no servidor', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await createThreeItemOrder(seller);
       expect(res.status).toBe(201);
       const order = res.body.order;
@@ -145,7 +160,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('ignora preço enviado pelo navegador', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await seller.post('/api/orders').send({
         client_id: f.clientId,
         status: 'order',
@@ -157,7 +172,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('valida cliente e itens', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const noItems = await seller.post('/api/orders').send({ client_id: f.clientId, status: 'quote', items: [] });
       expect(noItems.status).toBe(400);
       expect(noItems.body.error).toBe('Adicione pelo menos um produto.');
@@ -169,7 +184,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('edição de orçamento mantém o preço original dos itens já lançados', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const created = await createThreeItemOrder(seller);
       const id = created.body.order.id;
       await pool.query('update products set price = 50 where id = $1', [f.products.cimento]);
@@ -188,7 +203,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('converte orçamento em pedido e bloqueia edição depois', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
 
       const converted = await seller.post(`/api/orders/${id}/convert`);
@@ -204,7 +219,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('filtra a listagem por status e cliente', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       await createThreeItemOrder(seller, 'quote');
       await createThreeItemOrder(seller, 'order');
 
@@ -219,10 +234,10 @@ describeDb('API com banco de teste', () => {
     });
 
     it('só o admin exclui pedidos', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
       expect((await seller.delete(`/api/orders/${id}`)).status).toBe(403);
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       expect((await admin.delete(`/api/orders/${id}`)).status).toBe(204);
       expect((await admin.get(`/api/orders/${id}`)).status).toBe(404);
     });
@@ -230,9 +245,9 @@ describeDb('API com banco de teste', () => {
 
   describe('isolamento entre lojas (critério 4)', () => {
     it('vendedor da Loja B não vê nem altera pedidos da Loja A', async () => {
-      const sellerA = await login(app, 'vendedor.a@teste.local');
+      const sellerA = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(sellerA)).body.order.id;
-      const sellerB = await login(app, 'vendedor.b@teste.local');
+      const sellerB = await login(app, 'vendedor.b');
 
       expect((await sellerB.get(`/api/orders/${id}`)).status).toBe(404);
       expect((await sellerB.get(`/api/orders/${id}/pdf`)).status).toBe(404);
@@ -253,7 +268,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('vendedor não consegue lançar pedido em outra loja', async () => {
-      const sellerB = await login(app, 'vendedor.b@teste.local');
+      const sellerB = await login(app, 'vendedor.b');
       const res = await sellerB.post('/api/orders').send({
         client_id: f.clientId,
         status: 'quote',
@@ -265,9 +280,9 @@ describeDb('API com banco de teste', () => {
     });
 
     it('admin vê pedidos de todas as lojas', async () => {
-      await createThreeItemOrder(await login(app, 'vendedor.a@teste.local'));
-      await createThreeItemOrder(await login(app, 'vendedor.b@teste.local'));
-      const admin = await login(app, 'admin@teste.local');
+      await createThreeItemOrder(await login(app, 'vendedor.a'));
+      await createThreeItemOrder(await login(app, 'vendedor.b'));
+      const admin = await login(app, 'admin');
       const all = await admin.get('/api/orders');
       expect(all.body.total).toBe(2);
       const onlyA = await admin.get('/api/orders').query({ store_id: f.storeA });
@@ -275,10 +290,10 @@ describeDb('API com banco de teste', () => {
     });
 
     it('o próprio banco (RLS) esconde pedidos de outra loja', async () => {
-      const sellerA = await login(app, 'vendedor.a@teste.local');
+      const sellerA = await login(app, 'vendedor.a');
       await createThreeItemOrder(sellerA);
 
-      const sellerB = { id: f.sellerBId, role: 'seller' as const, store_id: f.storeB };
+      const sellerB = { id: f.sellerBId, tenant_id: f.tenantId, role: 'seller' as const, store_id: f.storeB };
       const seen = await withSession(pool, sellerB, async (db) => {
         const orders = await db.query('select id from orders');
         const items = await db.query('select id from order_items');
@@ -305,7 +320,7 @@ describeDb('API com banco de teste', () => {
 
   describe('PDF e WhatsApp (critérios 2 e 3)', () => {
     it('gera o PDF do pedido', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
       const res = await seller
         .get(`/api/orders/${id}/pdf`)
@@ -322,7 +337,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('avisa quando a EvolutionAPI não está configurada', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
       const res = await seller.post(`/api/orders/${id}/whatsapp`);
       expect(res.status).toBe(422);
@@ -330,9 +345,9 @@ describeDb('API com banco de teste', () => {
     });
 
     it('envia o PDF para a EvolutionAPI com o payload esperado', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await configureEvolution(admin);
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
 
       const res = await seller.post(`/api/orders/${id}/whatsapp`);
@@ -359,14 +374,14 @@ describeDb('API com banco de teste', () => {
     });
 
     it('responde 502 com o motivo quando a EvolutionAPI falha', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await configureEvolution(admin);
       evolution.respondWith(400, {
         status: 400,
         error: 'Bad Request',
         response: { message: [{ exists: false, jid: '5511987654321@s.whatsapp.net', number: '5511987654321' }] },
       });
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const id = (await createThreeItemOrder(seller)).body.order.id;
 
       const res = await seller.post(`/api/orders/${id}/whatsapp`);
@@ -377,7 +392,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('não devolve a API Key inteira para o navegador', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await configureEvolution(admin);
       const res = await admin.get('/api/settings');
       expect(res.body.settings).toEqual(
@@ -394,7 +409,7 @@ describeDb('API com banco de teste', () => {
 
   describe('permissões e cadastros', () => {
     it('vendedor não acessa telas de administração', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       expect((await seller.get('/api/settings')).status).toBe(403);
       expect((await seller.get('/api/users')).status).toBe(403);
       expect((await seller.get('/api/stores')).status).toBe(403);
@@ -402,7 +417,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('cadastra cliente com WhatsApp higienizado e recusa número inválido', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const ok = await seller.post('/api/clients').send({ name: 'João Souza', whatsapp: '(21) 99876-5432' });
       expect(ok.status).toBe(201);
       expect(ok.body.client.whatsapp).toBe('5521998765432');
@@ -418,7 +433,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('busca produto por código exato ou nome sem acento', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const byCode = await seller.get('/api/products').query({ q: 'tij-8f' });
       expect(byCode.body.items[0].code).toBe('TIJ-8F');
       const byName = await seller.get('/api/products').query({ q: 'areia media' });
@@ -426,26 +441,26 @@ describeDb('API com banco de teste', () => {
     });
 
     it('não exclui produto usado em pedido e explica o motivo', async () => {
-      await createThreeItemOrder(await login(app, 'vendedor.a@teste.local'));
-      const admin = await login(app, 'admin@teste.local');
+      await createThreeItemOrder(await login(app, 'vendedor.a'));
+      const admin = await login(app, 'admin');
       const res = await admin.delete(`/api/products/${f.products.cimento}`);
       expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/Desative-o/);
     });
 
     it('não deixa o admin tirar o próprio acesso', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin
         .put(`/api/users/${f.adminId}`)
-        .send({ name: 'Admin', email: 'admin@teste.local', role: 'seller', store_id: f.storeA, active: true });
+        .send({ name: 'Admin', username: 'admin', email: 'admin@teste.local', role: 'seller', store_id: f.storeA, active: true });
       expect(res.status).toBe(400);
     });
 
     it('exige loja para vendedor', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin
         .post('/api/users')
-        .send({ name: 'Sem Loja', email: 'semloja@teste.local', role: 'seller', password: 'senha-123' });
+        .send({ name: 'Sem Loja', username: 'semloja', email: 'semloja@teste.local', role: 'seller', password: 'senha-123' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Selecione a loja do vendedor.');
     });
@@ -456,14 +471,14 @@ describeDb('API com banco de teste', () => {
     const tinyPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
     it('PUT com PNG valido salva a logo e devolve has_logo true', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
       expect(res.status).toBe(200);
       expect(res.body.store.has_logo).toBe(true);
     });
 
     it('GET /stores/:id/logo devolve mime e data exatamente como foram enviados', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
 
       const res = await admin.get(`/api/stores/${f.storeA}/logo`);
@@ -473,21 +488,21 @@ describeDb('API com banco de teste', () => {
     });
 
     it('PUT com mime fora da lista devolve 400', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/gif' });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/não aceito/);
     });
 
     it('PUT com base64 malformado devolve 400', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: 'não-é-base64!@#$', mime: 'image/png' });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/base64/);
     });
 
     it('PUT com imagem acima de 500 KB devolve 400', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       // Gera mais de 500 KB em bytes decodificados para estourar o limite.
       const huge = Buffer.alloc(501 * 1024, 'A').toString('base64');
       const res = await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: huge, mime: 'image/png' });
@@ -496,7 +511,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('DELETE /stores/:id/logo devolve 204 e GET subsequente devolve 404', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
 
       const del = await admin.delete(`/api/stores/${f.storeA}/logo`);
@@ -507,7 +522,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('GET /stores (listagem) traz has_logo true e NAO traz logo_data', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       await admin.put(`/api/stores/${f.storeA}/logo`).send({ data: tinyPng, mime: 'image/png' });
 
       const list = await admin.get('/api/stores');
@@ -518,7 +533,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('rota de loja inexistente devolve 404, nao 500', async () => {
-      const admin = await login(app, 'admin@teste.local');
+      const admin = await login(app, 'admin');
       const res = await admin.put('/api/stores/999999/logo').send({ data: tinyPng, mime: 'image/png' });
       expect(res.status).toBe(404);
     });
@@ -526,12 +541,14 @@ describeDb('API com banco de teste', () => {
 
   describe('WhatsApp único por cliente', () => {
     async function totalClientes() {
-      const { rows } = await pool.query<{ total: number }>('select count(*)::int as total from clients');
+      // adminPool é o dono do schema e bypassa RLS; pool é oms_app, que vê só
+      // o próprio tenant — útil para checar que o insert foi bloqueado.
+      const { rows } = await adminPool.query<{ total: number }>('select count(*)::int as total from clients');
       return rows[0]!.total;
     }
 
     it('recusa cadastrar um WhatsApp que já pertence a outro cliente', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const before = await totalClientes();
 
       const res = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5511987654321' });
@@ -546,7 +563,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('continua cadastrando quem tem WhatsApp livre', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '(34) 99711-1276' });
       expect(res.status).toBe(201);
       expect(res.body.client).toMatchObject({ name: 'Marcos', whatsapp: '5534997111276' });
@@ -554,7 +571,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('recusa editar para o WhatsApp de outro cliente e aponta quem é o dono', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const outro = await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5534997111276' });
       expect(outro.status).toBe(201);
 
@@ -572,14 +589,14 @@ describeDb('API com banco de teste', () => {
     });
 
     it('deixa editar o nome sem apagar o próprio WhatsApp', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await seller.put(`/api/clients/${f.clientId}`).send({ name: 'Maria Souza', whatsapp: '5511987654321' });
       expect(res.status).toBe(200);
       expect(res.body.client).toMatchObject({ id: f.clientId, name: 'Maria Souza', whatsapp: '5511987654321' });
     });
 
     it('deixa trocar para um WhatsApp livre', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const res = await seller
         .put(`/api/clients/${f.clientId}`)
         .send({ name: 'Maria da Silva', whatsapp: '(34) 99711-1276' });
@@ -588,7 +605,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('trata duas formas do mesmo número como o mesmo cliente', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       expect((await seller.post('/api/clients').send({ name: 'Marcos', whatsapp: '5534997111276' })).status).toBe(201);
 
       const res = await seller.post('/api/clients').send({ name: 'Marcos outro', whatsapp: '(34) 99711-1276' });
@@ -600,7 +617,7 @@ describeDb('API com banco de teste', () => {
     });
 
     it('editar um id inexistente responde 404 mesmo com o número de outra pessoa', async () => {
-      const seller = await login(app, 'vendedor.a@teste.local');
+      const seller = await login(app, 'vendedor.a');
       const before = await totalClientes();
 
       const res = await seller.put('/api/clients/999999').send({ name: 'Fantasma', whatsapp: '5511987654321' });

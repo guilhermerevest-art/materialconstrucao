@@ -23,6 +23,28 @@ Senhas geradas pelo seed — **troque em "Alterar senha" depois do primeiro logi
 26 produtos de catálogo e 2 lojas (Centro / Jardim) já estão semeados. Não há clientes —
 crie pelo PDV quando for testar o WhatsApp, para não mandar mensagem a um número real.
 
+### Super admin (revendedor)
+
+A primeira conta do painel `/super` precisa ser criada por SQL — `super_admins` é uma tabela
+vazia por design. O primeiro super admin entra em `/super/login`, cria as lojamestres pelo
+painel e entrega a senha provisória do admin de cada uma.
+
+Gere o hash da senha que você quer usar com bcrypt (mesmo formato do projeto):
+
+```bash
+node -e "console.log(require('./server/node_modules/bcryptjs').hashSync('SUA_SENHA', 12))"
+```
+
+Depois:
+
+```sql
+insert into super_admins (email, password_hash)
+values ('voce@empresa.com.br', 'COLE_O_HASH_AQUI');
+```
+
+Lojamestres novas têm admin com senha provisória que deve ser trocada no primeiro login.
+Use o painel `/super` para criá-las (não use SQL — a tela já popula `settings`).
+
 > **Atenção SSL:** o Postgres desta VPS ainda está com `ssl=off`. O `npm run db:migrate`
 > e a API local funcionam sem SSL, mas a `VPS_DATABASE_URL` no `.env` está sem
 > `sslmode`. Antes de colocar em produção, habilite SSL no servidor e adicione

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { currentUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import { withSession } from '../db/session.js';
 import { describeEvolutionError, getConnectionState, loadEvolutionSettings } from '../lib/evolution.js';
 
 const settingsSchema = z.object({
@@ -41,36 +43,56 @@ function toPublicSettings(row: SettingsRow) {
 export function settingsRouter(ctx: AppContext) {
   const router = Router();
 
-  router.get('/', async (_req, res) => {
-    const { rows } = await ctx.pool.query<SettingsRow>(
-      'select evolution_api_url, evolution_instance, evolution_api_token, updated_at from settings where id = 1',
-    );
-    res.json({ settings: toPublicSettings(rows[0]!) });
+  router.get('/', async (req, res) => {
+    const me = currentUser(req);
+    const result = await withSession(ctx.pool, me, async (db) => {
+      const { rows } = await db.query<SettingsRow>(
+        'select evolution_api_url, evolution_instance, evolution_api_token, updated_at from settings where tenant_id = $1',
+        [me.tenant_id],
+      );
+      if (!rows[0]) {
+        // RLS nunca deixa um tenant sem settings — garantido pelo /super ao criar
+        // lojamestre. Mas em migração 005 antiga, pode haver tenant sem linha:
+        // devolve settings vazias sem 500.
+        return { evolution_api_url: null, evolution_instance: null, evolution_api_token: null, updated_at: new Date() };
+      }
+      return rows[0];
+    });
+    res.json({ settings: toPublicSettings(result) });
   });
 
   router.put('/', async (req, res) => {
+    const me = currentUser(req);
     const body = settingsSchema.parse(req.body);
-    if (!body.evolution_api_token) {
-      const current = await ctx.pool.query<{ has_token: boolean }>(
-        'select evolution_api_token is not null as has_token from settings where id = 1',
+
+    const result = await withSession(ctx.pool, me, async (db) => {
+      let hasToken = false;
+      if (!body.evolution_api_token) {
+        const current = await db.query<{ has_token: boolean }>(
+          'select evolution_api_token is not null as has_token from settings where tenant_id = $1',
+          [me.tenant_id],
+        );
+        hasToken = current.rows[0]?.has_token ?? false;
+        if (!hasToken) throw new HttpError(400, 'Informe a API Key da EvolutionAPI.');
+      }
+      const { rows } = await db.query<SettingsRow>(
+        `update settings
+            set evolution_api_url = $1,
+                evolution_instance = $2,
+                evolution_api_token = coalesce($3, evolution_api_token),
+                updated_at = now()
+          where tenant_id = $4
+         returning evolution_api_url, evolution_instance, evolution_api_token, updated_at`,
+        [body.evolution_api_url, body.evolution_instance, body.evolution_api_token ?? null, me.tenant_id],
       );
-      if (!current.rows[0]?.has_token) throw new HttpError(400, 'Informe a API Key da EvolutionAPI.');
-    }
-    const { rows } = await ctx.pool.query<SettingsRow>(
-      `update settings
-          set evolution_api_url = $1,
-              evolution_instance = $2,
-              evolution_api_token = coalesce($3, evolution_api_token),
-              updated_at = now()
-        where id = 1
-        returning evolution_api_url, evolution_instance, evolution_api_token, updated_at`,
-      [body.evolution_api_url, body.evolution_instance, body.evolution_api_token ?? null],
-    );
-    res.json({ settings: toPublicSettings(rows[0]!) });
+      return rows[0]!;
+    });
+    res.json({ settings: toPublicSettings(result) });
   });
 
-  router.post('/test', async (_req, res) => {
-    const settings = await loadEvolutionSettings(ctx.pool);
+  router.post('/test', async (req, res) => {
+    const me = currentUser(req);
+    const settings = await withSession(ctx.pool, me, (db) => loadEvolutionSettings(db, me.tenant_id));
     if (!settings) throw new HttpError(422, 'Salve a URL, a instância e a API Key antes de testar.');
     try {
       const state = await getConnectionState(settings, ctx.config.evolutionTimeoutMs);
