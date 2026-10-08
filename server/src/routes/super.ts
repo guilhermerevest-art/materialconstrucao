@@ -67,7 +67,12 @@ const createTenantSchema = z.object({
   domains: domainsSchema.optional(),
 });
 
-const updateDomainsSchema = z.object({ domains: domainsSchema });
+const updateTenantSchema = z.object({
+  slug: slugSchema,
+  name: z.string().trim().min(2, 'Informe o nome da lojamestre.').max(120),
+  active: z.boolean(),
+  domains: domainsSchema,
+});
 
 const renameAdminSchema = z.object({
   tenant_id: z.number().int().positive('Lojamestre inválida.'),
@@ -179,17 +184,26 @@ export function superRouter(ctx: AppContext) {
     res.status(201).json(result);
   });
 
-  // Troca a lista de domínios próprios da lojamestre pela enviada.
-  router.put('/tenants/:id/domains', async (req, res) => {
+  // Edita nome, slug, situação e domínios. A lista de domínios enviada substitui a atual.
+  router.put('/tenants/:id', async (req, res) => {
     const tenantId = z.coerce.number().int().positive().parse(req.params.id);
-    const { domains } = updateDomainsSchema.parse(req.body);
-    await withTransaction(ctx.pool, async (db) => {
+    const body = updateTenantSchema.parse(req.body);
+    const tenant = await withTransaction(ctx.pool, async (db) => {
       const found = await db.query('select 1 from tenants where id = $1', [tenantId]);
       if (!found.rowCount) throw new HttpError(404, 'Lojamestre não encontrada.');
+      const dup = await db.query('select 1 from tenants where lower(slug) = $1 and id <> $2', [body.slug, tenantId]);
+      if (dup.rowCount) throw new HttpError(409, 'Já existe uma lojamestre com esse slug.');
+      const { rows } = await db.query<{ id: number; slug: string; name: string; active: boolean }>(
+        `update tenants set slug = $2, name = $3, active = $4
+          where id = $1
+          returning id, slug, name, active`,
+        [tenantId, body.slug, body.name, body.active],
+      );
       await db.query('delete from tenant_domains where tenant_id = $1', [tenantId]);
-      await saveDomains(db, tenantId, domains);
+      await saveDomains(db, tenantId, body.domains);
+      return { ...rows[0]!, domains: body.domains };
     });
-    res.json({ domains });
+    res.json({ tenant });
   });
 
   // Renomeia o admin legado que vinha da v1 (login por email) para username.

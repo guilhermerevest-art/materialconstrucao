@@ -20,6 +20,7 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   products_code_key: 'Já existe um produto com este código.',
   clients_tenant_whatsapp_key: 'Já existe um cliente com este WhatsApp.',
   tenant_domains_domain_key: 'Este domínio já está em outra lojamestre.',
+  tenants_slug_key: 'Já existe uma lojamestre com esse slug.',
 };
 
 const IN_USE_MESSAGES: Record<string, string> = {

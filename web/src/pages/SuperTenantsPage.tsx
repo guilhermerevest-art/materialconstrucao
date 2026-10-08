@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Globe, Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { toast } from 'sonner';
@@ -7,7 +7,7 @@ import { BrandMark, EmptyState, PageHeader } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Field, Input, Textarea } from '@/components/ui/input';
+import { Checkbox, Field, Input, Textarea } from '@/components/ui/input';
 import { Alert, Badge, Skeleton } from '@/components/ui/misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { ApiError } from '@/lib/api';
@@ -17,7 +17,7 @@ import {
   useMeSuper,
   useSuperLogout,
   useSuperTenants,
-  useUpdateTenantDomains,
+  useUpdateTenant,
 } from '@/lib/superAuth';
 import type { Tenant } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -34,31 +34,50 @@ const DOMAINS_HINT =
   'Um por linha, ex.: pedidos.lojadojoao.com.br. Quem entrar por esses endereços não precisa informar a lojamestre. ' +
   'Cada domínio também precisa ser adicionado no projeto da Vercel.';
 
-function DomainsDialog({ tenant, onOpenChange }: { tenant: Tenant | null; onOpenChange: (open: boolean) => void }) {
+const SLUG_HINT = 'Digitado no login de quem entra pelo endereço geral, sem domínio próprio.';
+const SLUG_ERROR = 'Slug: letras minúsculas, números e hífen. 2 a 32 caracteres.';
+
+/** Slug normalizado, ou null se não estiver no formato aceito pelo servidor. */
+function cleanSlug(value: string) {
+  const slug = value.trim().toLowerCase();
+  return /^[a-z0-9-]{2,32}$/.test(slug) ? slug : null;
+}
+
+function EditTenantDialog({ tenant, onOpenChange }: { tenant: Tenant | null; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const update = useUpdateTenantDomains();
-  const [text, setText] = useState('');
+  const update = useUpdateTenant();
+  const [slug, setSlug] = useState('');
+  const [name, setName] = useState('');
+  const [active, setActive] = useState(true);
+  const [domains, setDomains] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenant) return;
-    setText(tenant.domains.join('\n'));
+    setSlug(tenant.slug);
+    setName(tenant.name);
+    setActive(tenant.active);
+    setDomains(tenant.domains.join('\n'));
     setError(null);
   }, [tenant]);
+
+  const slugChanged = tenant !== null && slug.trim().toLowerCase() !== tenant.slug;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!tenant) return;
     setError(null);
+    const newSlug = cleanSlug(slug);
+    if (!newSlug) return setError(SLUG_ERROR);
     update.mutate(
-      { tenantId: tenant.id, domains: parseDomains(text) },
+      { tenantId: tenant.id, slug: newSlug, name: name.trim(), active, domains: parseDomains(domains) },
       {
-        onSuccess: () => {
+        onSuccess: ({ tenant: saved }) => {
           queryClient.invalidateQueries({ queryKey: ['super-tenants'] });
-          toast.success(`Domínios de "${tenant.name}" salvos.`);
+          toast.success(`Lojamestre "${saved.name}" atualizada.`);
           onOpenChange(false);
         },
-        onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível salvar os domínios.'),
+        onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível salvar a lojamestre.'),
       },
     );
   }
@@ -67,27 +86,68 @@ function DomainsDialog({ tenant, onOpenChange }: { tenant: Tenant | null; onOpen
     <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Domínios de {tenant?.name}</DialogTitle>
-          <DialogDescription>{DOMAINS_HINT}</DialogDescription>
+          <DialogTitle>Editar lojamestre</DialogTitle>
+          <DialogDescription>
+            Os usuários, lojas e pedidos continuam como estão. Para mexer neles, entre como admin da lojamestre.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           {error && <Alert variant="danger" title={error} />}
-          <Field label="Domínios" htmlFor="tenant-domains-edit">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Slug"
+              htmlFor="tenant-edit-slug"
+              hint={
+                slugChanged
+                  ? `Quem entra pelo endereço geral passa a digitar "${slug.trim().toLowerCase()}". Avise os usuários.`
+                  : SLUG_HINT
+              }
+            >
+              <Input
+                id="tenant-edit-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                autoComplete="off"
+                required
+                spellCheck={false}
+              />
+            </Field>
+            <Field label="Nome" htmlFor="tenant-edit-name" hint="Como a lojamestre aparece no sistema.">
+              <Input
+                id="tenant-edit-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                autoFocus
+              />
+            </Field>
+          </div>
+          <Field label="Domínios" htmlFor="tenant-edit-domains" hint={DOMAINS_HINT}>
             <Textarea
-              id="tenant-domains-edit"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={4}
+              id="tenant-edit-domains"
+              value={domains}
+              onChange={(e) => setDomains(e.target.value)}
+              rows={3}
               spellCheck={false}
-              autoFocus
             />
           </Field>
+          <div className="grid gap-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} />
+              Lojamestre ativa
+            </label>
+            {!active && (
+              <p className="text-[13px] text-destructive">
+                Ninguém desta lojamestre consegue entrar, e quem já está dentro é desconectado.
+              </p>
+            )}
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" loading={update.isPending}>
-              Salvar domínios
+              Salvar lojamestre
             </Button>
           </DialogFooter>
         </form>
@@ -129,12 +189,10 @@ function NewTenantDialog({
   function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
-    const cleanSlug = slug.trim().toLowerCase();
+    const newSlug = cleanSlug(slug);
     const cleanUsername = adminUsername.trim().toLowerCase();
     const cleanEmail = adminEmail.trim();
-    if (!/^[a-z0-9-]{2,32}$/.test(cleanSlug)) {
-      return setError('Slug: letras minúsculas, números e hífen. 2 a 32 caracteres.');
-    }
+    if (!newSlug) return setError(SLUG_ERROR);
     if (!/^[a-z0-9._-]{3,32}$/.test(cleanUsername)) {
       return setError('Usuário do admin: letras, números, ponto, hífen ou underline. 3 a 32 caracteres.');
     }
@@ -143,7 +201,7 @@ function NewTenantDialog({
     }
     create.mutate(
       {
-        slug: cleanSlug,
+        slug: newSlug,
         name: name.trim(),
         admin_name: adminName.trim(),
         admin_username: cleanUsername,
@@ -181,7 +239,7 @@ function NewTenantDialog({
             <Field
               label="Slug"
               htmlFor="tenant-slug"
-              hint="Digitado no login de quem entra pelo endereço geral, sem domínio próprio."
+              hint={SLUG_HINT}
             >
               <Input
                 id="tenant-slug"
@@ -275,7 +333,7 @@ export function SuperTenantsPage() {
   const tenants = useSuperTenants();
   const logout = useSuperLogout();
   const [creating, setCreating] = useState(false);
-  const [editingDomains, setEditingDomains] = useState<Tenant | null>(null);
+  const [editing, setEditing] = useState<Tenant | null>(null);
 
   if (me.isPending) {
     return (
@@ -372,9 +430,9 @@ export function SuperTenantsPage() {
                   </TD>
                   <TD className="text-muted-foreground">{formatDate(tenant.created_at)}</TD>
                   <TD className="pr-4 text-right">
-                    <Button size="sm" variant="outline" onClick={() => setEditingDomains(tenant)}>
-                      <Globe />
-                      Domínios
+                    <Button size="sm" variant="outline" onClick={() => setEditing(tenant)}>
+                      <Pencil />
+                      Editar
                     </Button>
                   </TD>
                 </TR>
@@ -385,7 +443,7 @@ export function SuperTenantsPage() {
       </Card>
 
       <NewTenantDialog open={creating} onOpenChange={setCreating} />
-      <DomainsDialog tenant={editingDomains} onOpenChange={(open) => !open && setEditingDomains(null)} />
+      <EditTenantDialog tenant={editing} onOpenChange={(open) => !open && setEditing(null)} />
     </div>
   );
 }

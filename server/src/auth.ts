@@ -24,6 +24,8 @@ export type AuthUser = SessionUser & {
   store_name: string | null;
   active: boolean;
   token_version: number;
+  /** Lojamestre desativada pelo super admin derruba a sessão de todos os usuários dela. */
+  tenant_active: boolean;
 };
 
 export type SuperAdmin = {
@@ -42,8 +44,9 @@ export async function loadAuthUser(pool: pg.Pool, id: number, tenantId: number):
     await setTenantContext(db, tenantId);
     const { rows } = await db.query<AuthUser>(
       `select u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id,
-              u.active, u.token_version, s.name as store_name
+              u.active, u.token_version, s.name as store_name, t.active as tenant_active
          from users u
+         join tenants t on t.id = u.tenant_id
          left join stores s on s.id = u.store_id
         where u.id = $1`,
       [id],
@@ -136,7 +139,9 @@ export function authenticate(ctx: AppContext): RequestHandler {
     if (!Number.isSafeInteger(userId) || !Number.isSafeInteger(tenantId)) throw new HttpError(401, SESSION_EXPIRED);
 
     const user = await loadAuthUser(ctx.pool, userId, tenantId);
-    if (!user || !user.active || user.token_version !== payload.tv) throw new HttpError(401, SESSION_EXPIRED);
+    if (!user || !user.active || !user.tenant_active || user.token_version !== payload.tv) {
+      throw new HttpError(401, SESSION_EXPIRED);
+    }
 
     req.user = user;
     next();
