@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCheck, CheckCircle2, Download, FileCheck2, Pencil, Tras
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
+import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/dialog';
@@ -16,6 +16,7 @@ import {
   formatDateTime,
   formatMoney,
   formatOrderNumber,
+  formatPercent,
   formatQuantity,
   formatWhatsapp,
 } from '@/lib/format';
@@ -190,6 +191,17 @@ export function OrderDetailPage() {
             </div>
           </Card>
 
+          {order.delivery_address && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Endereço de entrega</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed whitespace-pre-line">{order.delivery_address}</p>
+              </CardContent>
+            </Card>
+          )}
+
           {order.notes && (
             <Card>
               <CardHeader>
@@ -203,6 +215,15 @@ export function OrderDetailPage() {
         </div>
 
         <aside className="grid gap-4">
+          <DiscountBreakdown
+            subtotalCents={Math.round(order.subtotal_amount * 100)}
+            discountCents={Math.round(order.discount_amount * 100)}
+            discountLabel={
+              order.discount_type === 'percent' && order.discount_value
+                ? `Desconto (${formatPercent(order.discount_value)})`
+                : 'Desconto'
+            }
+          />
           <PriceTag cents={Math.round(order.total_amount * 100)} />
 
           <Card>

@@ -738,4 +738,79 @@ describeDb('API com banco de teste', () => {
       expect((await admin.delete(`/api/payment-methods/${unused.id}`)).status).toBe(404);
     });
   });
+
+  describe('desconto e endereço de entrega', () => {
+    // 3 x 38,90 = 116,70
+    const order = (extra: Record<string, unknown>) => ({
+      client_id: f.clientId,
+      status: 'quote',
+      items: [{ product_id: f.products.cimento, quantity: 3 }],
+      ...extra,
+    });
+
+    it('calcula desconto percentual e em valor no servidor', async () => {
+      const seller = await login(app, 'vendedor.a');
+      const percent = await seller.post('/api/orders').send(order({ discount_type: 'percent', discount_value: 10 }));
+      expect(percent.status).toBe(201);
+      expect(percent.body.order).toMatchObject({
+        subtotal_amount: 116.7,
+        discount_type: 'percent',
+        discount_value: 10,
+        discount_amount: 11.67,
+        total_amount: 105.03,
+      });
+
+      const amount = await seller.post('/api/orders').send(order({ discount_type: 'amount', discount_value: 20 }));
+      expect(amount.body.order).toMatchObject({ discount_amount: 20, total_amount: 96.7 });
+
+      // Valor sem tipo é ignorado; sem desconto, total = subtotal.
+      const none = await seller.post('/api/orders').send(order({ discount_value: 50 }));
+      expect(none.body.order).toMatchObject({ discount_type: null, discount_value: null, discount_amount: 0, total_amount: 116.7 });
+    });
+
+    it('recusa desconto acima de 100% ou do valor dos produtos', async () => {
+      const seller = await login(app, 'vendedor.a');
+      const tooMuchPercent = await seller.post('/api/orders').send(order({ discount_type: 'percent', discount_value: 101 }));
+      expect(tooMuchPercent.status).toBe(400);
+      expect(tooMuchPercent.body.error).toBe('O desconto não pode passar de 100%.');
+      const tooMuchAmount = await seller.post('/api/orders').send(order({ discount_type: 'amount', discount_value: 116.71 }));
+      expect(tooMuchAmount.status).toBe(400);
+      expect(tooMuchAmount.body.error).toBe('O desconto não pode ser maior que o valor dos produtos.');
+      const noValue = await seller.post('/api/orders').send(order({ discount_type: 'amount' }));
+      expect(noValue.status).toBe(400);
+      expect((await seller.get('/api/orders')).body.total).toBe(0);
+    });
+
+    it('recalcula o desconto ao editar e guarda o endereço de entrega', async () => {
+      const seller = await login(app, 'vendedor.a');
+      const created = (
+        await seller
+          .post('/api/orders')
+          .send(order({ discount_type: 'percent', discount_value: 10, delivery_address: '  Rua das Palmeiras, 45 - fundos  ' }))
+      ).body.order;
+      expect(created.delivery_address).toBe('Rua das Palmeiras, 45 - fundos');
+
+      // 6 x 38,90 = 233,40; 10% = 23,34
+      const edited = await seller.put(`/api/orders/${created.id}`).send(
+        order({
+          items: [{ product_id: f.products.cimento, quantity: 6 }],
+          discount_type: 'percent',
+          discount_value: 10,
+          delivery_address: '',
+        }),
+      );
+      expect(edited.status).toBe(200);
+      expect(edited.body.order).toMatchObject({
+        subtotal_amount: 233.4,
+        discount_amount: 23.34,
+        total_amount: 210.06,
+        delivery_address: null,
+      });
+
+      const converted = await seller.post(`/api/orders/${created.id}/convert`);
+      expect(converted.body.order.total_amount).toBe(210.06);
+      const pdf = await seller.get(`/api/orders/${created.id}/pdf`);
+      expect(pdf.status).toBe(200);
+    });
+  });
 });

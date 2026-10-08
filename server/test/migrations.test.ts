@@ -120,6 +120,8 @@ describeDb('atualização do banco da VPS', () => {
     expect(orders.body.total).toBe(1);
     const detail = await agent.get(`/api/orders/${orders.body.items[0].id}`).set('Host', 'materialconstrucao.vercel.app');
     expect(detail.body.order.items).toHaveLength(1);
+    // Pedido de antes do desconto: subtotal igual ao total, sem desconto.
+    expect(detail.body.order).toMatchObject({ subtotal_amount: 77.8, discount_amount: 0, total_amount: 77.8 });
 
     const list = await agent.get('/api/users').set('Host', 'materialconstrucao.vercel.app');
     expect(list.body.items.map((u: { username: string }) => u.username).sort()).toEqual([

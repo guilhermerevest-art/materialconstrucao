@@ -80,6 +80,31 @@ export function PriceTag({ cents, caption, className }: { cents: number; caption
   );
 }
 
+/** Subtotal e desconto acima da etiqueta de total. Sem desconto, não aparece. */
+export function DiscountBreakdown({
+  subtotalCents,
+  discountCents,
+  discountLabel,
+}: {
+  subtotalCents: number;
+  discountCents: number;
+  discountLabel: string;
+}) {
+  if (discountCents <= 0) return null;
+  return (
+    <dl className="grid gap-1.5 rounded-lg border border-border bg-card px-5 py-3 text-sm">
+      <div className="flex justify-between gap-3">
+        <dt className="text-muted-foreground">Subtotal</dt>
+        <dd className="tabular-nums">{centsToMoney(subtotalCents)}</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt className="text-muted-foreground">{discountLabel}</dt>
+        <dd className="font-medium text-success tabular-nums">- {centsToMoney(discountCents)}</dd>
+      </div>
+    </dl>
+  );
+}
+
 export function EmptyState({
   title,
   description,

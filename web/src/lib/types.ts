@@ -51,6 +51,8 @@ export type PaymentMethod = {
 
 export type OrderStatus = 'quote' | 'order';
 
+export type DiscountType = 'percent' | 'amount';
+
 export type OrderSummary = {
   id: number;
   status: OrderStatus;
@@ -84,8 +86,17 @@ export type Order = {
   store_id: number;
   client_id: number;
   status: OrderStatus;
+  /** Soma dos itens. */
+  subtotal_amount: number;
+  discount_type: DiscountType | null;
+  /** Percentual (10 = 10%) ou valor em reais, conforme discount_type. */
+  discount_value: number | null;
+  /** Desconto em reais, calculado no servidor. */
+  discount_amount: number;
+  /** Valor final, já com desconto. */
   total_amount: number;
   notes: string | null;
+  delivery_address: string | null;
   payment_method_id: number | null;
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;

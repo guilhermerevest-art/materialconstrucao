@@ -6,18 +6,31 @@ import { toast } from 'sonner';
 import { CartTable, type CartItem } from '@/components/pdv/CartTable';
 import { ClientPicker, type ClientPickerHandle } from '@/components/pdv/ClientPicker';
 import { ProductSearch, type ProductSearchHandle } from '@/components/pdv/ProductSearch';
-import { EmptyState, PageHeader, PriceTag } from '@/components/shared';
+import { DiscountBreakdown, EmptyState, PageHeader, PriceTag } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/dialog';
-import { Field, NativeSelect, Textarea } from '@/components/ui/input';
+import { Field, Input, NativeSelect, Textarea } from '@/components/ui/input';
 import { Kbd, Spinner } from '@/components/ui/misc';
 import { api, ApiError } from '@/lib/api';
 import { useUser } from '@/lib/auth';
-import { formatOrderNumber, lineTotalCents } from '@/lib/format';
+import {
+  centsToMoney,
+  decimalToInput,
+  discountCents,
+  formatOrderNumber,
+  formatPercent,
+  lineTotalCents,
+  parseDecimal,
+} from '@/lib/format';
 import { useDocumentTitle, useHotkeys } from '@/lib/hooks';
-import type { Client, Order, OrderStatus, PaymentMethod, Product, Store } from '@/lib/types';
+import type { Client, DiscountType, Order, OrderStatus, PaymentMethod, Product, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+const DISCOUNT_TYPES: { value: DiscountType; label: string }[] = [
+  { value: 'percent', label: '%' },
+  { value: 'amount', label: 'R$' },
+];
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string; hint: string }[] = [
   { value: 'quote', label: 'Orçamento', hint: 'Proposta de preço' },
@@ -44,6 +57,9 @@ export function OrderEditorPage() {
   const [status, setStatus] = useState<OrderStatus>('quote');
   const [notes, setNotes] = useState('');
   const [paymentMethodId, setPaymentMethodId] = useState<number | null>(null);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [discountType, setDiscountType] = useState<DiscountType>('percent');
+  const [discountText, setDiscountText] = useState('');
   const [storeId, setStoreId] = useState<number | null>(user.store_id);
   const [errors, setErrors] = useState<{ client?: string; items?: string; store?: string }>({});
   const dirty = useRef(false);
@@ -90,6 +106,9 @@ export function OrderEditorPage() {
     setStatus(order.status);
     setNotes(order.notes ?? '');
     setPaymentMethodId(order.payment_method_id);
+    setDeliveryAddress(order.delivery_address ?? '');
+    setDiscountType(order.discount_type ?? 'percent');
+    setDiscountText(order.discount_value ? decimalToInput(order.discount_value) : '');
     setStoreId(order.store_id);
   }, [existing.data]);
 
@@ -103,7 +122,19 @@ export function OrderEditorPage() {
     if (editingId === null) clientPicker.current?.focus();
   }, [editingId]);
 
-  const totalCents = items.reduce((sum, item) => sum + lineTotalCents(item.unit_price, item.quantity), 0);
+  const subtotalCents = items.reduce((sum, item) => sum + lineTotalCents(item.unit_price, item.quantity), 0);
+  // Campo vazio = sem desconto. O servidor recalcula; aqui é só a prévia.
+  const discountValue = discountText.trim() ? parseDecimal(discountText) : null;
+  const discountError =
+    discountText.trim() && (discountValue === null || discountValue <= 0)
+      ? 'Digite um número maior que zero.'
+      : discountType === 'percent' && discountValue !== null && discountValue > 100
+        ? 'O desconto não pode passar de 100%.'
+        : discountType === 'amount' && discountValue !== null && Math.round(discountValue * 100) > subtotalCents
+          ? `O desconto não pode passar de ${centsToMoney(subtotalCents)}.`
+          : null;
+  const appliedDiscountCents = discountValue && !discountError ? discountCents(subtotalCents, discountType, discountValue) : 0;
+  const totalCents = subtotalCents - appliedDiscountCents;
 
   const save = useMutation({
     mutationFn: () => {
@@ -112,6 +143,9 @@ export function OrderEditorPage() {
         status,
         notes,
         payment_method_id: paymentMethodId,
+        delivery_address: deliveryAddress,
+        discount_type: discountValue ? discountType : null,
+        discount_value: discountValue,
         store_id: isAdmin ? storeId : undefined,
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
       };
@@ -194,6 +228,10 @@ export function OrderEditorPage() {
     if (next.client) return clientPicker.current?.focus();
     if (next.items) return productSearch.current?.focus();
     if (next.store) return;
+    if (discountError) {
+      toast.error(`Desconto: ${discountError}`);
+      return document.getElementById('desconto')?.focus();
+    }
     save.mutate();
   }
 
@@ -366,6 +404,57 @@ export function OrderEditorPage() {
                 </NativeSelect>
               </Field>
 
+              <Field label="Desconto" htmlFor="desconto" error={discountError}>
+                <div className="flex gap-2">
+                  <div className="flex shrink-0 rounded-md border border-input p-0.5" role="radiogroup" aria-label="Tipo de desconto">
+                    {DISCOUNT_TYPES.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={discountType === option.value}
+                        onClick={() => {
+                          setDiscountType(option.value);
+                          changed();
+                        }}
+                        className={cn(
+                          'min-w-10 rounded px-2.5 text-sm font-semibold',
+                          discountType === option.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    id="desconto"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={discountText}
+                    onChange={(e) => {
+                      setDiscountText(e.target.value);
+                      changed();
+                    }}
+                    placeholder={discountType === 'percent' ? 'Ex.: 5' : 'Ex.: 20,00'}
+                    aria-invalid={Boolean(discountError)}
+                  />
+                </div>
+              </Field>
+
+              <Field label="Endereço de entrega" htmlFor="entrega" hint="Deixe em branco se o cliente retira na loja.">
+                <Textarea
+                  id="entrega"
+                  value={deliveryAddress}
+                  maxLength={300}
+                  rows={2}
+                  onChange={(e) => {
+                    setDeliveryAddress(e.target.value);
+                    changed();
+                  }}
+                  placeholder="Rua, número, bairro, cidade, referência"
+                />
+              </Field>
+
               <Field label="Observações" htmlFor="observacoes" hint="Sai no PDF enviado ao cliente.">
                 <Textarea
                   id="observacoes"
@@ -381,6 +470,11 @@ export function OrderEditorPage() {
             </CardContent>
           </Card>
 
+          <DiscountBreakdown
+            subtotalCents={subtotalCents}
+            discountCents={appliedDiscountCents}
+            discountLabel={discountType === 'percent' && discountValue ? `Desconto (${formatPercent(discountValue)})` : 'Desconto'}
+          />
           <PriceTag
             cents={totalCents}
             caption={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'itens'}` : undefined}

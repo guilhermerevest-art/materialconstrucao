@@ -26,11 +26,30 @@ const orderSchema = z.object({
   notes: optionalText(1000),
   store_id: z.number().int().positive().nullable().optional(),
   payment_method_id: z.number().int().positive().nullable().default(null),
+  delivery_address: optionalText(300),
+  discount_type: z.enum(['percent', 'amount'], 'Tipo de desconto inválido.').nullable().default(null),
+  discount_value: z
+    .number('Informe o valor do desconto.')
+    .positive('O desconto precisa ser maior que zero.')
+    .max(9_999_999, 'Desconto alto demais.')
+    .transform((v) => Math.round(v * 100) / 100)
+    .nullable()
+    .default(null),
   items: z
     .array(itemSchema, 'Adicione pelo menos um produto.')
     .min(1, 'Adicione pelo menos um produto.')
     .max(300, 'Um pedido pode ter no máximo 300 itens.'),
-});
+})
+  .superRefine((order, ctx) => {
+    if (order.discount_type && order.discount_value === null) {
+      ctx.addIssue({ code: 'custom', message: 'Informe o valor do desconto.', path: ['discount_value'] });
+    }
+    if (order.discount_type === 'percent' && order.discount_value !== null && order.discount_value > 100) {
+      ctx.addIssue({ code: 'custom', message: 'O desconto não pode passar de 100%.', path: ['discount_value'] });
+    }
+  })
+  // Sem tipo, o valor não vale nada: zera para o par ficar consistente no banco.
+  .transform((order) => (order.discount_type ? order : { ...order, discount_value: null }));
 
 const dateParam = z.preprocess(
   (v) => (v === '' ? undefined : v),
@@ -168,10 +187,23 @@ export function ordersRouter(ctx: AppContext) {
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id);
       const { rows } = await db.query<{ id: number }>(
-        `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name, confirmed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, case when $5 = 'order' then now() end)
+        `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name,
+                             delivery_address, discount_type, discount_value, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, case when $5 = 'order' then now() end)
          returning id`,
-        [user.tenant_id, user.id, storeId, body.client_id, body.status, body.notes, body.payment_method_id, paymentMethodName],
+        [
+          user.tenant_id,
+          user.id,
+          storeId,
+          body.client_id,
+          body.status,
+          body.notes,
+          body.payment_method_id,
+          paymentMethodName,
+          body.delivery_address,
+          body.discount_type,
+          body.discount_value,
+        ],
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
@@ -207,10 +239,22 @@ export function ordersRouter(ctx: AppContext) {
         `update orders
             set client_id = $2, status = $3, notes = $4, store_id = $5,
                 payment_method_id = $6, payment_method_name = $7,
+                delivery_address = $8, discount_type = $9, discount_value = $10,
                 confirmed_at = case when $3 = 'order' then now() end,
                 updated_at = now()
           where id = $1`,
-        [id, body.client_id, body.status, body.notes, storeId, body.payment_method_id, paymentMethodName],
+        [
+          id,
+          body.client_id,
+          body.status,
+          body.notes,
+          storeId,
+          body.payment_method_id,
+          paymentMethodName,
+          body.delivery_address,
+          body.discount_type,
+          body.discount_value,
+        ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
       return loadOrderDetail(db, id);

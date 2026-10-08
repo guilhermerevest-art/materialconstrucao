@@ -1,12 +1,15 @@
-import type { OrderStatus } from './types';
+import type { DiscountType, OrderStatus } from './types';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const quantity = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+const percent = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const timeFormat = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 export const formatMoney = (value: number) => money.format(value);
 export const formatQuantity = (value: number) => quantity.format(value);
+/** 12.5 -> "12,5%". */
+export const formatPercent = (value: number) => `${percent.format(value)}%`;
 export const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 export const formatDateTime = (iso: string) => `${dateFormat.format(new Date(iso))} ${timeFormat.format(new Date(iso))}`;
 
@@ -49,6 +52,11 @@ export const decimalToInput = (value: number) => String(value).replace('.', ',')
  */
 export function lineTotalCents(unitPrice: number, qty: number) {
   return Math.round((Math.round(unitPrice * 100) * Math.round(qty * 1000)) / 1000);
+}
+
+/** Desconto em centavos, com o mesmo arredondamento do banco (round(subtotal * % / 100, 2)). */
+export function discountCents(subtotalCents: number, type: DiscountType, value: number) {
+  return type === 'percent' ? Math.round((subtotalCents * Math.round(value * 100)) / 10000) : Math.round(value * 100);
 }
 
 export const centsToMoney = (cents: number) => formatMoney(cents / 100);

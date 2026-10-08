@@ -116,6 +116,10 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 - Ao editar um orçamento, os itens que já estavam nele mantêm o preço da época; itens novos usam o preço atual do catálogo.
 - O item do pedido guarda nome, código, unidade e preço do produto, para o pedido não mudar quando o catálogo mudar.
 - Sem trava de estoque (V1).
+- **Desconto** vale para o pedido inteiro, em percentual (até 100%) ou em valor (até o valor dos produtos).
+  O servidor calcula subtotal, desconto e total; o total da listagem, do painel e do WhatsApp já vem com desconto.
+  Ao editar o orçamento, o desconto é recalculado sobre os itens novos (o percentual continua o mesmo).
+- **Endereço de entrega** é opcional (em branco = cliente retira na loja) e sai no PDF.
 - WhatsApp do cliente é guardado só com dígitos e DDI (`(11) 98765-4321` vira `5511987654321`).
   Número de outro país deve começar com `+`.
 - **O mesmo WhatsApp não pode ficar em dois cadastros de cliente.** Ao salvar um número que

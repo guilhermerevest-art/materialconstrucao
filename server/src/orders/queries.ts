@@ -20,8 +20,17 @@ export type OrderDetail = {
   store_id: number;
   client_id: number;
   status: OrderStatus;
+  /** Soma dos itens. */
+  subtotal_amount: number;
+  discount_type: 'percent' | 'amount' | null;
+  /** Percentual (10 = 10%) ou valor em reais, conforme discount_type. */
+  discount_value: number | null;
+  /** Desconto em reais, calculado no servidor. */
+  discount_amount: number;
+  /** Valor final: subtotal - desconto. */
   total_amount: number;
   notes: string | null;
+  delivery_address: string | null;
   payment_method_id: number | null;
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;
@@ -71,7 +80,9 @@ function withStoreLogo(order: OrderDetail, logo: StoreLogo | null): OrderPdfDeta
 /** Pedido com itens. Precisa rodar dentro de withSession: o RLS decide se o pedido é visível. */
 export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<OrderPdfDetail | null> {
   const { rows } = await db.query<OrderPdfRow>(
-    `select o.id, o.user_id, o.store_id, o.client_id, o.status, o.total_amount, o.notes,
+    `select o.id, o.user_id, o.store_id, o.client_id, o.status,
+            o.subtotal_amount, o.discount_type, o.discount_value, o.discount_amount, o.total_amount,
+            o.notes, o.delivery_address,
             o.payment_method_id, o.payment_method_name, o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
             c.name as client_name, c.whatsapp as client_whatsapp,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
@@ -98,8 +109,8 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
 }
 
 /**
- * Substitui os itens do pedido e recalcula o total. O preço vem do catálogo,
- * nunca do navegador. Na edição, produtos que já estavam no pedido mantêm o
+ * Substitui os itens do pedido e recalcula subtotal, desconto e total, com o
+ * desconto que já está gravado no pedido. O preço vem do catálogo, nunca do navegador. Na edição, produtos que já estavam no pedido mantêm o
  * preço da época (previousPrices).
  */
 export async function writeOrderItems(
@@ -140,11 +151,31 @@ export async function writeOrderItems(
         items.map((i) => previousPrices.get(i.product_id) ?? byId.get(i.product_id)!.price),
       ],
   );
-  await db.query(
-    `update orders
-        set total_amount = (select coalesce(sum(subtotal), 0) from order_items where order_id = $1),
+  const { rows } = await db.query<{ subtotal_amount: number; discount_amount: number }>(
+    `with sums as (
+       select coalesce(sum(subtotal), 0) as subtotal from order_items where order_id = $1
+     ), priced as (
+       select s.subtotal,
+              case o.discount_type
+                when 'percent' then round(s.subtotal * o.discount_value / 100, 2)
+                when 'amount' then o.discount_value
+                else 0
+              end as discount
+         from orders o, sums s
+        where o.id = $1
+     )
+     update orders o
+        set subtotal_amount = p.subtotal,
+            discount_amount = p.discount,
+            total_amount = p.subtotal - p.discount,
             updated_at = now()
-      where id = $1`,
+       from priced p
+      where o.id = $1
+      returning o.subtotal_amount, o.discount_amount`,
     [orderId],
   );
+  const totals = rows[0]!;
+  if (totals.discount_amount > totals.subtotal_amount) {
+    throw new HttpError(400, 'O desconto não pode ser maior que o valor dos produtos.');
+  }
 }

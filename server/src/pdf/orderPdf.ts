@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { documentLabel, formatDateTime, formatMoney, formatOrderNumber, formatQuantity } from '../lib/format.js';
+import { documentLabel, formatDateTime, formatMoney, formatOrderNumber, formatPercent, formatQuantity } from '../lib/format.js';
 import { formatWhatsapp } from '../lib/phone.js';
 import type { OrderDetail, OrderPdfDetail, StoreLogo } from '../orders/queries.js';
 
@@ -77,7 +77,8 @@ function drawDocument(doc: Doc, order: OrderPdfDetail, timeZone: string) {
   y = drawParties(doc, order, y + 16);
   y = drawItems(doc, order, y + 18);
   y = drawTotal(doc, order, y + 12);
-  if (order.notes) drawNotes(doc, order.notes, y + 16);
+  if (order.delivery_address) y = drawTextBox(doc, 'Endereço de entrega', order.delivery_address, y + 16);
+  if (order.notes) drawTextBox(doc, 'Observações', order.notes, y + 16);
   drawFooters(doc, timeZone);
 }
 
@@ -248,13 +249,30 @@ function drawItems(doc: Doc, order: OrderDetail, startY: number): number {
 function drawTotal(doc: Doc, order: OrderDetail, startY: number): number {
   const boxWidth = 230;
   const boxHeight = 46;
+  const hasDiscount = order.discount_amount > 0;
+  const breakdownHeight = hasDiscount ? 34 : 0;
   let y = startY;
-  if (y + boxHeight > contentBottom(doc)) {
+  if (y + breakdownHeight + boxHeight > contentBottom(doc)) {
     doc.addPage();
     y = MARGIN;
   }
   const right = doc.page.width - MARGIN;
   const x = right - boxWidth;
+
+  if (hasDiscount) {
+    const discountLabel =
+      order.discount_type === 'percent' ? `Desconto (${formatPercent(order.discount_value ?? 0)})` : 'Desconto';
+    const rows: [string, string][] = [
+      ['Subtotal', formatMoney(order.subtotal_amount)],
+      [discountLabel, `- ${formatMoney(order.discount_amount)}`],
+    ];
+    rows.forEach(([label, value], index) => {
+      const rowY = y + index * 15;
+      doc.font('Helvetica').fontSize(9.5).fillColor(MUTED).text(label, x + 14, rowY, { width: 120 });
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(value, x + 70, rowY, { width: boxWidth - 84, align: 'right' });
+    });
+    y += breakdownHeight;
+  }
 
   const count = order.items.length;
   doc
@@ -273,10 +291,11 @@ function drawTotal(doc: Doc, order: OrderDetail, startY: number): number {
   return y + boxHeight;
 }
 
-function drawNotes(doc: Doc, notes: string, startY: number) {
+/** Quadro de texto livre (endereço de entrega, observações). Devolve onde ele termina. */
+function drawTextBox(doc: Doc, title: string, content: string, startY: number): number {
   const width = doc.page.width - MARGIN * 2;
   const pad = 10;
-  const text = pdfSafe(notes);
+  const text = pdfSafe(content);
   doc.font('Helvetica').fontSize(9.5);
   const textHeight = doc.heightOfString(text, { width: width - pad * 2 });
   const boxHeight = textHeight + pad * 2 + 16;
@@ -286,12 +305,13 @@ function drawNotes(doc: Doc, notes: string, startY: number) {
     y = MARGIN;
   }
   doc.lineWidth(1).strokeColor(RULE).roundedRect(MARGIN, y, width, boxHeight, 4).stroke();
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(MUTED).text('Observações', MARGIN + pad, y + pad, { width: width - pad * 2 });
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(MUTED).text(title, MARGIN + pad, y + pad, { width: width - pad * 2 });
   doc
     .font('Helvetica')
     .fontSize(9.5)
     .fillColor(INK)
     .text(text, MARGIN + pad, doc.y + 4, { width: width - pad * 2 });
+  return y + boxHeight;
 }
 
 function drawFooters(doc: Doc, timeZone: string) {
