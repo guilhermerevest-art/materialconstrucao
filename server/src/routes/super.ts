@@ -12,7 +12,7 @@ import {
 } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
-import { withTransaction } from '../db/session.js';
+import { setTenantContext, withTransaction } from '../db/session.js';
 
 const slugSchema = z
   .string()
@@ -52,10 +52,6 @@ const renameAdminSchema = z.object({
   username: usernameSchema,
 });
 
-const TENANT_LIST_COLUMNS = `t.id, t.slug, t.name, t.active, t.created_at,
-  (select count(*) from stores s where s.tenant_id = t.id) as stores_count,
-  (select count(*) from users u where u.tenant_id = t.id) as users_count`;
-
 export function superRouter(ctx: AppContext) {
   const router = Router();
 
@@ -89,8 +85,22 @@ export function superRouter(ctx: AppContext) {
   router.use(authenticateSuper(ctx));
 
   router.get('/tenants', async (_req, res) => {
-    const { rows } = await ctx.pool.query(`select ${TENANT_LIST_COLUMNS} from tenants t order by t.created_at desc`);
-    res.json({ items: rows });
+    const items = await withTransaction(ctx.pool, async (db) => {
+      const { rows } = await db.query<{ id: number; slug: string; name: string; active: boolean; created_at: Date }>(
+        'select id, slug, name, active, created_at from tenants order by created_at desc',
+      );
+      // stores e users têm RLS por lojamestre: cada contagem roda no contexto dela.
+      const result = [];
+      for (const tenant of rows) {
+        await setTenantContext(db, tenant.id);
+        const counts = await db.query<{ stores_count: number; users_count: number }>(
+          'select (select count(*) from stores) as stores_count, (select count(*) from users) as users_count',
+        );
+        result.push({ ...tenant, ...counts.rows[0]! });
+      }
+      return result;
+    });
+    res.json({ items });
   });
 
   router.post('/tenants', async (req, res) => {
@@ -106,6 +116,8 @@ export function superRouter(ctx: AppContext) {
         [body.slug, body.name],
       );
       const tenantId = tenant.rows[0]!.id;
+      // users e settings têm RLS por lojamestre: o resto roda no contexto da nova.
+      await setTenantContext(db, tenantId);
 
       // Username precisa ser único no tenant. Como o tenant acabou de ser criado,
       // é sempre único, mas verificamos por segurança.
@@ -134,17 +146,20 @@ export function superRouter(ctx: AppContext) {
   // Renomeia o admin legado que vinha da v1 (login por email) para username.
   router.post('/rename-admin', async (req, res) => {
     const body = renameAdminSchema.parse(req.body);
-    const { rowCount } = await ctx.pool.query(
-      `update users set username = $3
-         where id = $1 and tenant_id = $2`,
-      [body.user_id, body.tenant_id, body.username],
-    );
-    if (!rowCount) throw new HttpError(404, 'Usuário não encontrado.');
-    const dup = await ctx.pool.query(
-      `select 1 from users where tenant_id = $1 and id <> $2 and lower(username) = $3`,
-      [body.tenant_id, body.user_id, body.username],
-    );
-    if (dup.rowCount) throw new HttpError(409, 'Já existe um usuário com esse nome neste lojamestre.');
+    await withTransaction(ctx.pool, async (db) => {
+      await setTenantContext(db, body.tenant_id);
+      const dup = await db.query(
+        `select 1 from users where tenant_id = $1 and id <> $2 and lower(username) = $3`,
+        [body.tenant_id, body.user_id, body.username],
+      );
+      if (dup.rowCount) throw new HttpError(409, 'Já existe um usuário com esse nome neste lojamestre.');
+      const { rowCount } = await db.query(
+        `update users set username = $3
+           where id = $1 and tenant_id = $2`,
+        [body.user_id, body.tenant_id, body.username],
+      );
+      if (!rowCount) throw new HttpError(404, 'Usuário não encontrado.');
+    });
     res.status(204).end();
   });
 

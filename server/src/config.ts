@@ -15,11 +15,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1, 'defina DATABASE_URL'),
-  /** URL de conexão para o pool de login (role oms_login, BYPASSRLS). Opcional
-   * em dev: se não for informada, usa a mesma DATABASE_URL e a função
-   * `find_login` continua acessível ao role que conecta. Em produção, defina
-   * `DATABASE_LOGIN_URL` apontando para o role dedicado, com senha própria. */
-  DATABASE_LOGIN_URL: z.string().optional(),
   DATABASE_CA_CERT: z.string().optional(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET precisa ter pelo menos 32 caracteres'),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
@@ -34,8 +29,6 @@ export type Config = {
   env: 'development' | 'production' | 'test';
   port: number;
   databaseUrl: string;
-  /** URL do pool de login (role `oms_login`). Veja DATABASE_LOGIN_URL. */
-  databaseLoginUrl?: string;
   /** Certificado (PEM) da CA do Postgres, para sslmode=verify-ca/verify-full. */
   databaseCaCert?: string;
   jwtSecret: string;
@@ -73,7 +66,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     env: e.NODE_ENV,
     port: e.PORT,
     databaseUrl: e.DATABASE_URL,
-    databaseLoginUrl: e.DATABASE_LOGIN_URL || undefined,
     databaseCaCert: e.DATABASE_CA_CERT || undefined,
     jwtSecret: e.JWT_SECRET,
     cookieSecure: e.COOKIE_SECURE ? e.COOKIE_SECURE === 'true' : e.NODE_ENV === 'production' || onVercel,

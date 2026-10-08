@@ -9,6 +9,11 @@ const LOCK_ID = 7_270_401;
 /** Aplica, em ordem, os arquivos .sql de migrations/ que ainda não rodaram. Cada arquivo roda numa transação. */
 export async function runMigrations(pool: pg.Pool, log: (message: string) => void = console.log) {
   const client = await pool.connect();
+  // Avisos das migrações (raise warning) aparecem no terminal.
+  const onNotice = (notice: { message?: string; severity?: string }) => {
+    if (notice.severity === 'WARNING') log(`[aviso] ${notice.message}`);
+  };
+  client.on('notice', onNotice);
   try {
     await client.query('select pg_advisory_lock($1)', [LOCK_ID]);
     await client.query(`
@@ -36,6 +41,7 @@ export async function runMigrations(pool: pg.Pool, log: (message: string) => voi
     }
   } finally {
     await client.query('select pg_advisory_unlock($1)', [LOCK_ID]).catch(() => {});
+    client.off('notice', onNotice);
     client.release();
   }
 }

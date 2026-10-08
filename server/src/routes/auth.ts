@@ -1,19 +1,20 @@
 import bcrypt from 'bcryptjs';
 import { Router, type Request } from 'express';
+import type pg from 'pg';
 import { z } from 'zod';
-import type { AuthUser } from '../auth.js';
 import {
   authenticate,
   clearSession,
   currentUser,
   hashPassword,
   issueSession,
+  loadAuthUser,
   toPublicUser,
   verifyPassword,
 } from '../auth.js';
 import type { Config } from '../config.js';
 import type { AppContext } from '../context.js';
-import { withSession } from '../db/session.js';
+import { setTenantContext, withSession, withTransaction } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { loginLimiter } from '../lib/loginLimiter.js';
 
@@ -49,6 +50,39 @@ const changePasswordSchema = z.object({
   new_password: z.string().min(8, 'A nova senha precisa ter pelo menos 8 caracteres.').max(200),
 });
 
+type LoginCredential = {
+  id: number;
+  tenant_id: number;
+  password_hash: string;
+  active: boolean;
+  token_version: number;
+  tenant_active: boolean;
+};
+
+/**
+ * Credencial de (lojamestre, usuário). `tenants` não tem RLS; achada a lojamestre,
+ * o contexto dela faz o RLS de users mostrar só os usuários dela. Assim o login
+ * roda com o usuário comum do banco, sem papel com BYPASSRLS.
+ */
+async function findLogin(pool: pg.Pool, tenantSlug: string, username: string): Promise<LoginCredential | null> {
+  return withTransaction(pool, async (db) => {
+    const tenant = await db.query<{ id: number; active: boolean }>(
+      'select id, active from tenants where lower(slug) = $1',
+      [tenantSlug],
+    );
+    const found = tenant.rows[0];
+    if (!found) return null;
+    await setTenantContext(db, found.id);
+    const { rows } = await db.query<Omit<LoginCredential, 'tenant_active'>>(
+      `select id, tenant_id, password_hash, active, token_version
+         from users
+        where tenant_id = $1 and lower(username) = $2`,
+      [found.id, username],
+    );
+    return rows[0] ? { ...rows[0], tenant_active: found.active } : null;
+  });
+}
+
 let warnedInsecureCookie = false;
 function warnIfCookieWillBeDropped(req: Request, config: Config) {
   if (config.cookieSecure && !req.secure && !warnedInsecureCookie) {
@@ -70,31 +104,9 @@ export function authRouter(ctx: AppContext) {
       throw new HttpError(429, 'Muitas tentativas sem sucesso. Aguarde 15 minutos e tente de novo.');
     }
 
-    const { rows } = await ctx.loginPool.query<{
-      id: number;
-      password_hash: string;
-      active: boolean;
-      token_version: number;
-      tenant_id: number;
-      tenant_slug: string;
-      tenant_active: boolean;
-    }>(
-      // SECURITY DEFINER via role `oms_login`: o pool principal respeita RLS,
-      // mas no momento do login ainda não temos app.user_id setado, e a
-      // policy users_tenant esconderia qualquer linha. O pool de login é
-      // um role dedicado com BYPASSRLS e SEM grants em tabelas — só pode
-      // chamar `find_login`, que devolve um único registro (ou zero).
-      // `user_active` é o nome da coluna retornada por find_login; o
-      // mapeamento (active) preserva a checagem a jusante.
-      `select user_id as id, password_hash, user_active as active, token_version,
-              tenant_id, tenant_slug, tenant_active
-         from find_login($1, $2)`,
-      [tenant_slug, username],
-    );
-    const found = rows[0];
+    const found = await findLogin(ctx.pool, tenant_slug, username);
     const valid = await verifyPassword(password, found?.password_hash ?? DUMMY_HASH);
-    console.log('[login-debug]', JSON.stringify({ found, valid }));
-    if (!found || !found.password_hash || !valid) {
+    if (!found || !valid) {
       await loginLimiter.fail(ctx.pool, key);
       throw new HttpError(401, GENERIC_LOGIN_ERROR);
     }
@@ -110,16 +122,7 @@ export function authRouter(ctx: AppContext) {
     await loginLimiter.reset(ctx.pool, key);
     warnIfCookieWillBeDropped(req, ctx.config);
     issueSession(res, ctx.config, found);
-    // loadAuthUser rodaria contra o pool principal, mas no momento do login o
-// app.user_id ainda não foi setado — o RLS esconderia a própria linha do
-// usuário que acabou de autenticar. Usamos a função SECURITY DEFINER
-// `load_user_with_store`, que oms_login (BYPASSRLS + sem grants em tabelas)
-// pode chamar para obter o mesmo conjunto de campos.
-    const userRes = await ctx.loginPool.query<AuthUser>(
-      `select * from load_user_with_store($1)`,
-      [found.id],
-    );
-    const user = userRes.rows[0] ?? null;
+    const user = await loadAuthUser(ctx.pool, found.id, found.tenant_id);
     res.json({ user: user && toPublicUser(user) });
   });
 
@@ -143,10 +146,10 @@ export function authRouter(ctx: AppContext) {
         throw new HttpError(400, 'A senha atual está incorreta.');
       }
       // Trocar a senha encerra as sessões abertas em outros computadores; esta recebe um cookie novo.
-      const updated = await db.query<{ id: number; token_version: number }>(
+      const updated = await db.query<{ id: number; tenant_id: number; token_version: number }>(
         `update users set password_hash = $2, token_version = token_version + 1
           where id = $1
-          returning id, token_version`,
+          returning id, tenant_id, token_version`,
         [user.id, await hashPassword(body.new_password)],
       );
       return updated.rows[0]!;
