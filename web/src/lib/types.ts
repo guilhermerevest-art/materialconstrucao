@@ -113,6 +113,8 @@ export type Tenant = {
   created_at: string;
   stores_count: number;
   users_count: number;
+  /** Domínios próprios: quem entra por eles não informa a lojamestre no login. */
+  domains: string[];
 };
 
 export type SuperAdmin = {

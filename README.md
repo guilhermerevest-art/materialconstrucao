@@ -45,6 +45,18 @@ insert into super_admins (email, password_hash)
 values ('voce@empresa.com.br', 'COLE_O_HASH_AQUI');
 ```
 
+### Domínio próprio por lojamestre
+
+No painel `/super`, cada lojamestre pode ter um ou mais domínios (ex.: `pedidos.lojadojoao.com.br`).
+Quem entra por um desses endereços não vê o campo "Lojamestre" no login: ela vem do domínio, e o
+nome da loja aparece no topo da tela. No endereço geral (`materialconstrucao.vercel.app`) o campo
+continua aparecendo. Para cada domínio:
+
+1. Cadastre no `/super` (botão **Domínios** na lista, ou no campo da lojamestre nova).
+2. Na Vercel, em **Settings → Domains** do projeto, adicione o mesmo domínio.
+3. No registro do domínio (Registro.br etc.), crie o apontamento DNS que a Vercel mostrar
+   (normalmente um `CNAME` para `cname.vercel-dns.com`).
+
 Lojamestres novas têm admin com senha provisória que deve ser trocada no primeiro login.
 Use o painel `/super` para criá-las (não use SQL — a tela já popula `settings`).
 

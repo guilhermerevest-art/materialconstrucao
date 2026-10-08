@@ -42,12 +42,22 @@ function clearSessionData(queryClient: QueryClient) {
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { tenant_slug: string; username: string; password: string }) =>
+    mutationFn: (input: { tenant_slug?: string; username: string; password: string }) =>
       api<{ user: User }>('/auth/login', { method: 'POST', body: input }),
     onSuccess: ({ user }) => {
       clearSessionData(queryClient);
       queryClient.setQueryData(ME_KEY, user);
     },
+  });
+}
+
+/** Lojamestre do domínio acessado (domínio próprio); null no endereço geral. */
+export function useDomainTenant() {
+  return useQuery({
+    queryKey: ['domain-tenant'],
+    queryFn: () => api<{ tenant: { name: string } | null }>('/auth/tenant').then((r) => r.tenant),
+    staleTime: Infinity,
+    retry: false,
   });
 }
 

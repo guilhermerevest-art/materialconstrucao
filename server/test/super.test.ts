@@ -147,4 +147,75 @@ describeDb('lojamestres e painel /super', () => {
     expect(res.status).toBe(204);
     await login(app, 'gerente');
   });
+  it('lojamestre com domínio próprio: login sem informar a lojamestre', async () => {
+    const sup = await loginSuper();
+    const created = await sup.post('/api/super/tenants').send({
+      slug: 'joao',
+      name: 'Loja do João',
+      admin_name: 'João',
+      admin_username: 'admin',
+      admin_password: 'senha-do-joao-1',
+      domains: ['https://Pedidos.LojaDoJoao.com.br/login', ''],
+    });
+    expect(created.status).toBe(201);
+
+    const list = await sup.get('/api/super/tenants');
+    expect(list.body.items.find((t: { slug: string }) => t.slug === 'joao').domains).toEqual([
+      'pedidos.lojadojoao.com.br',
+    ]);
+
+    const host = 'pedidos.lojadojoao.com.br';
+    expect((await request(app).get('/api/auth/tenant').set('Host', host)).body).toEqual({
+      tenant: { name: 'Loja do João' },
+    });
+    expect((await request(app).get('/api/auth/tenant').set('Host', `www.${host}:443`)).body.tenant).toEqual({
+      name: 'Loja do João',
+    });
+    expect((await request(app).get('/api/auth/tenant').set('Host', 'materialconstrucao.vercel.app')).body).toEqual({
+      tenant: null,
+    });
+
+    // No domínio próprio, vale a lojamestre dele, mesmo se o corpo trouxer outra.
+    const agent = request.agent(app);
+    const ok = await agent.post('/api/auth/login').set('Host', host).send({ username: 'admin', password: 'senha-do-joao-1' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.user.tenant_id).toBe(created.body.tenant.id);
+    expect((await agent.get('/api/auth/me').set('Host', host)).status).toBe(200);
+    const forced = await request(app)
+      .post('/api/auth/login')
+      .set('Host', host)
+      .send({ tenant_slug: f.slug, username: 'admin', password: PASSWORD });
+    expect(forced.status).toBe(401);
+    expect(forced.body.error).toBe('Usuário ou senha incorretos.');
+
+    // No endereço geral, sem domínio próprio, a lojamestre continua obrigatória.
+    const noSlug = await request(app).post('/api/auth/login').send({ username: 'admin', password: PASSWORD });
+    expect(noSlug.status).toBe(400);
+  });
+
+  it('edita os domínios e recusa domínio inválido ou de outra lojamestre', async () => {
+    const sup = await loginSuper();
+    const put = (id: number, domains: string[]) => sup.put(`/api/super/tenants/${id}/domains`).send({ domains });
+
+    const saved = await put(f.tenantId, ['parceiro.com.br', 'pedidos.parceiro.com.br', 'PARCEIRO.com.br']);
+    expect(saved.status).toBe(200);
+    expect(saved.body.domains).toEqual(['parceiro.com.br', 'pedidos.parceiro.com.br']);
+
+    const other = await sup.post('/api/super/tenants').send({
+      slug: 'outra',
+      name: 'Outra Loja',
+      admin_name: 'Fulano',
+      admin_username: 'admin',
+      admin_password: 'senha-da-outra-1',
+      domains: ['parceiro.com.br'],
+    });
+    expect(other.status).toBe(409);
+    expect(other.body.error).toContain('Loja de teste');
+
+    expect((await put(f.tenantId, ['não é domínio'])).status).toBe(400);
+    expect((await put(f.tenantId + 100, ['x.com.br'])).status).toBe(404);
+
+    expect((await put(f.tenantId, [])).body.domains).toEqual([]);
+    expect((await request(app).get('/api/auth/tenant').set('Host', 'parceiro.com.br')).body.tenant).toBeNull();
+  });
 });
