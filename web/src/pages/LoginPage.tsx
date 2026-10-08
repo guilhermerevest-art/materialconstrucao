@@ -15,7 +15,7 @@ function AuthShell({ subtitle, children }: { subtitle: string; children: ReactNo
         <div className="mb-6 flex items-center gap-3">
           <BrandMark className="size-10" />
           <div className="leading-tight">
-            <p className="text-xl font-bold tracking-tight">Balcão</p>
+            <p className="text-xl font-bold tracking-tight">Gestão de Loja</p>
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </div>
         </div>

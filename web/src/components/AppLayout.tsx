@@ -59,7 +59,7 @@ export function AppLayout() {
         <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4 lg:px-6">
           <Link to="/" className="flex items-center gap-2.5 rounded-md pr-2 font-bold tracking-tight">
             <BrandMark className="size-7" />
-            <span className="text-[17px]">Balcão</span>
+            <span className="text-[17px]">Gestão de Loja</span>
           </Link>
 
           <nav className="ml-2 hidden items-center lg:flex" aria-label="Principal">

@@ -1,4 +1,4 @@
-# Balcão: pedidos e orçamentos
+# Gestão de Loja: pedidos e orçamentos
 
 Sistema de pedidos e orçamentos para o balcão das lojas da rede. O vendedor lança o
 orçamento ou pedido pelo teclado e envia o PDF ao cliente pelo WhatsApp (EvolutionAPI)
