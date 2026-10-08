@@ -73,9 +73,22 @@ export function useCreateTenant() {
       }>('/super/tenants', { method: 'POST', body: input }),
   });
 }
-export function useUpdateTenantDomains() {
+
+export function useUpdateTenant() {
   return useMutation({
-    mutationFn: ({ tenantId, domains }: { tenantId: number; domains: string[] }) =>
-      api<{ domains: string[] }>(`/super/tenants/${tenantId}/domains`, { method: 'PUT', body: { domains } }),
+    mutationFn: ({
+      tenantId,
+      ...input
+    }: {
+      tenantId: number;
+      slug: string;
+      name: string;
+      active: boolean;
+      domains: string[];
+    }) =>
+      api<{ tenant: Pick<Tenant, 'id' | 'slug' | 'name' | 'active' | 'domains'> }>(`/super/tenants/${tenantId}`, {
+        method: 'PUT',
+        body: input,
+      }),
   });
 }

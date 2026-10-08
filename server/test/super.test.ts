@@ -195,11 +195,12 @@ describeDb('lojamestres e painel /super', () => {
 
   it('edita os domínios e recusa domínio inválido ou de outra lojamestre', async () => {
     const sup = await loginSuper();
-    const put = (id: number, domains: string[]) => sup.put(`/api/super/tenants/${id}/domains`).send({ domains });
+    const put = (id: number, domains: string[]) =>
+      sup.put(`/api/super/tenants/${id}`).send({ slug: f.slug, name: 'Loja de teste', active: true, domains });
 
     const saved = await put(f.tenantId, ['parceiro.com.br', 'pedidos.parceiro.com.br', 'PARCEIRO.com.br']);
     expect(saved.status).toBe(200);
-    expect(saved.body.domains).toEqual(['parceiro.com.br', 'pedidos.parceiro.com.br']);
+    expect(saved.body.tenant.domains).toEqual(['parceiro.com.br', 'pedidos.parceiro.com.br']);
 
     const other = await sup.post('/api/super/tenants').send({
       slug: 'outra',
@@ -215,7 +216,59 @@ describeDb('lojamestres e painel /super', () => {
     expect((await put(f.tenantId, ['não é domínio'])).status).toBe(400);
     expect((await put(f.tenantId + 100, ['x.com.br'])).status).toBe(404);
 
-    expect((await put(f.tenantId, [])).body.domains).toEqual([]);
+    expect((await put(f.tenantId, [])).body.tenant.domains).toEqual([]);
     expect((await request(app).get('/api/auth/tenant').set('Host', 'parceiro.com.br')).body.tenant).toBeNull();
+  });
+
+  it('edita nome, slug e situação; desativar derruba as sessões abertas', async () => {
+    const sup = await loginSuper();
+    const put = (id: number, body: Record<string, unknown>) =>
+      sup.put(`/api/super/tenants/${id}`).send({ slug: f.slug, name: 'Loja de teste', active: true, domains: [], ...body });
+    const loginAs = (slug: string) =>
+      request.agent(app).post('/api/auth/login').send({ tenant_slug: slug, username: 'admin', password: PASSWORD });
+
+    const other = await sup.post('/api/super/tenants').send({
+      slug: 'outra',
+      name: 'Outra Loja',
+      admin_name: 'Fulano',
+      admin_username: 'admin',
+      admin_password: 'senha-da-outra-1',
+    });
+    expect(other.status).toBe(201);
+    expect((await put(f.tenantId, { slug: 'OUTRA' })).status).toBe(409);
+    expect((await put(f.tenantId, { slug: 'com espaço' })).status).toBe(400);
+    expect((await put(f.tenantId, { name: '' })).status).toBe(400);
+    expect((await put(f.tenantId + 100, {})).status).toBe(404);
+
+    const seller = await login(app, 'vendedor.a');
+    const renamed = await put(f.tenantId, { slug: 'Parceiro-Novo', name: 'Parceiro Novo' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.tenant).toMatchObject({ id: f.tenantId, slug: 'parceiro-novo', name: 'Parceiro Novo', active: true });
+    // O login pelo endereço geral passa a usar o slug novo; quem já estava dentro continua.
+    expect((await loginAs(f.slug)).status).toBe(401);
+    expect((await loginAs('parceiro-novo')).status).toBe(200);
+    expect((await seller.get('/api/auth/me')).status).toBe(200);
+
+    const deactivated = await put(f.tenantId, { slug: 'parceiro-novo', name: 'Parceiro Novo', active: false });
+    expect(deactivated.status).toBe(200);
+    expect((await seller.get('/api/auth/me')).status).toBe(401);
+    expect((await seller.get('/api/orders')).status).toBe(401);
+    expect((await loginAs('parceiro-novo')).status).toBe(403);
+    // A outra lojamestre não é afetada.
+    expect((await loginAs('outra')).status).toBe(401);
+    const otherAdmin = await request(app)
+      .post('/api/auth/login')
+      .send({ tenant_slug: 'outra', username: 'admin', password: 'senha-da-outra-1' });
+    expect(otherAdmin.status).toBe(200);
+
+    const list = await sup.get('/api/super/tenants');
+    expect(list.body.items.find((t: { id: number }) => t.id === f.tenantId)).toMatchObject({
+      slug: 'parceiro-novo',
+      name: 'Parceiro Novo',
+      active: false,
+    });
+
+    expect((await put(f.tenantId, { slug: 'parceiro-novo', active: true })).status).toBe(200);
+    expect((await loginAs('parceiro-novo')).status).toBe(200);
   });
 });
