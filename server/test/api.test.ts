@@ -18,21 +18,19 @@ const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
 
 describeDb('API com banco de teste', () => {
   let pool: pg.Pool;
-  let loginPool: pg.Pool;
   let adminPool: pg.Pool;
   let app: ReturnType<typeof createApp>;
   let f: Fixtures;
   let evolution: Awaited<ReturnType<typeof startFakeEvolution>>;
 
   beforeAll(async () => {
-    ({ pool, loginPool, app, adminPool } = setupApp(TEST_DATABASE_URL!));
+    ({ pool, app, adminPool } = setupApp(TEST_DATABASE_URL!));
     evolution = await startFakeEvolution();
   });
 
   afterAll(async () => {
     await evolution?.close();
     await pool?.end();
-    await loginPool?.end();
     await adminPool?.end();
   });
 

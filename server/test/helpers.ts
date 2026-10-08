@@ -19,7 +19,6 @@ export function testConfig(databaseUrl: string): Config {
     env: 'test',
     port: 0,
     databaseUrl,
-    databaseLoginUrl: databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_login:oms_login@'),
     jwtSecret: 'segredo-de-teste-com-pelo-menos-32-caracteres',
     cookieSecure: false,
     trustProxy: false,
@@ -32,17 +31,22 @@ export function testConfig(databaseUrl: string): Config {
 /** Recria o schema do zero e aplica as migrações (usa o pool admin). */
 export async function resetDatabase(_pool: pg.Pool, adminPool?: pg.Pool) {
   const p = adminPool ?? _pool;
+  // A app conecta nos testes como oms_app: usuário comum (sem superusuário nem
+  // BYPASSRLS), para o RLS valer de verdade.
+  await p.query(`
+    do $$ begin
+      if not exists (select 1 from pg_roles where rolname = 'oms_app') then
+        create role oms_app login password 'oms_app' nosuperuser nobypassrls;
+      end if;
+    end $$`);
   await p.query('drop schema if exists public cascade');
   await p.query('create schema public');
-  await p.query('grant usage on schema public to oms_app');
   await runMigrations(p, () => {});
   // Re-aplica os grants depois que as tabelas foram recriadas.
   await p.query(`
+    grant usage on schema public to oms_app;
     grant select, insert, update, delete on all tables in schema public to oms_app;
     grant usage, select on all sequences in schema public to oms_app;
-    grant usage on schema public to oms_login;
-    grant execute on function find_login(text, text) to oms_login;
-    grant execute on function load_user_with_store(bigint) to oms_login;
   `);
 }
 
@@ -112,21 +116,14 @@ export async function seedFixtures(_pool: pg.Pool, adminPool?: pg.Pool) {
 }
 
 export function setupApp(databaseUrl: string) {
-  // Conecta com o role oms_app para que o RLS seja aplicado (postgres é superuser e bypassa).
-  // resetDatabase precisa da conexão admin para dropar schema e recriar — o test
-  // chama um segundo pool (admin) só para isso.
-  // O loginPool conecta com oms_login, que tem BYPASSRLS mas só pode chamar
-  // find_login — usado só no /auth/login.
   // adminPool conecta como postgres (dono do schema public) para poder dropar
-  // e recriar o schema entre os testes. A app e o login conectam com roles
-  // sem superuser/bypassrls para que o RLS seja aplicado de verdade.
+  // e recriar o schema entre os testes. A app conecta com oms_app, sem
+  // superuser/bypassrls, para que o RLS seja aplicado de verdade.
   const adminPool = createPool(databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//postgres:postgres@'));
   const appUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_app:oms_app@');
-  const loginUrl = databaseUrl.replace(/\/\/[^:]+:[^@]+@/, '//oms_login:oms_login@');
   const pool = createPool(appUrl);
-  const loginPool = createPool(loginUrl);
-  const app = createApp({ pool, loginPool, config: testConfig(databaseUrl) });
-  return { pool, loginPool, app, adminPool };
+  const app = createApp({ pool, config: testConfig(databaseUrl) });
+  return { pool, app, adminPool };
 }
 
 export async function login(app: ReturnType<typeof createApp>, username: string) {

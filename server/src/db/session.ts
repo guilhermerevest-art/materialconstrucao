@@ -23,6 +23,15 @@ export async function withTransaction<T>(pool: pg.Pool, fn: (db: pg.PoolClient) 
   }
 }
 
+/**
+ * Seta só a lojamestre (app.tenant_id) na transação atual. Basta para o RLS de
+ * users, stores e settings; serve para o login e para o painel /super, que agem
+ * numa lojamestre antes de haver um usuário logado nela.
+ */
+export async function setTenantContext(db: pg.PoolClient, tenantId: number) {
+  await db.query(`select set_config('app.tenant_id', $1, true)`, [String(tenantId)]);
+}
+
 /** Seta as variáveis de RLS para o usuário na conexão atual. */
 async function setSessionContext(db: pg.PoolClient, user: SessionUser) {
   await db.query(

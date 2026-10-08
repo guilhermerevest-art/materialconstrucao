@@ -14,14 +14,4 @@ const pool = createPool(config.databaseUrl, {
 // Fecha conexões ociosas antes de a Vercel suspender a instância.
 attachDatabasePool(pool);
 
-// loginPool: mesmo papel do pool de prod, mas com role `oms_login`. Se a
-// env DATABASE_LOGIN_URL não estiver setada em prod, cai para a URL geral
-// (comportamento de dev) — o RLS do pool principal permanece inalterado.
-const loginPool = createPool(config.databaseLoginUrl ?? config.databaseUrl, {
-  caCert: config.databaseCaCert,
-  max: 2,
-  idleTimeoutMillis: 5_000,
-});
-attachDatabasePool(loginPool);
-
-export default createApp({ pool, loginPool, config });
+export default createApp({ pool, config });

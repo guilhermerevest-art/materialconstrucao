@@ -12,13 +12,15 @@ com um clique.
 ## Acesso (banco da VPS)
 
 O banco em `76.13.237.176:15432/materialconstrucao` foi provisionado em 2026-10-07.
-Senhas geradas pelo seed — **troque em "Alterar senha" depois do primeiro login**:
+Senhas geradas pelo seed — **troque em "Alterar senha" depois do primeiro login**.
+O login pede lojamestre e usuário: os cadastros de antes das lojamestres ficaram na
+lojamestre `default`, e o usuário é a parte do e-mail antes do `@`.
 
-| Usuário | Perfil | Loja | Senha |
-| --- | --- | --- | --- |
-| `admin@empresa.com.br` | admin | Loja Centro | `HHgploAUoY8k` |
-| `carlos@demo.local` | vendedor | Loja Centro | `demo1234` |
-| `joana@demo.local` | vendedor | Loja Jardim | `demo1234` |
+| Lojamestre | Usuário | Perfil | Loja | Senha |
+| --- | --- | --- | --- | --- |
+| `default` | `admin` | admin | Loja Centro | `HHgploAUoY8k` |
+| `default` | `carlos` | vendedor | Loja Centro | `demo1234` |
+| `default` | `joana` | vendedor | Loja Jardim | `demo1234` |
 
 26 produtos de catálogo e 2 lojas (Centro / Jardim) já estão semeados. Não há clientes —
 crie pelo PDV quando for testar o WhatsApp, para não mandar mensagem a um número real.
@@ -29,10 +31,11 @@ A primeira conta do painel `/super` precisa ser criada por SQL — `super_admins
 vazia por design. O primeiro super admin entra em `/super/login`, cria as lojamestres pelo
 painel e entrega a senha provisória do admin de cada uma.
 
-Gere o hash da senha que você quer usar com bcrypt (mesmo formato do projeto):
+Gere o hash da senha que você quer usar com bcrypt (mesmo formato do projeto), na raiz do
+repositório depois do `npm install`:
 
 ```bash
-node -e "console.log(require('./server/node_modules/bcryptjs').hashSync('SUA_SENHA', 12))"
+node -e "console.log(require('bcryptjs').hashSync('SUA_SENHA', 10))"
 ```
 
 Depois:
