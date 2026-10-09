@@ -126,6 +126,16 @@ export type Settings = {
   has_token: boolean;
   token_hint: string | null;
   updated_at: string;
+  /** O servidor tem a EvolutionAPI da plataforma: a loja conecta lendo o QR Code. */
+  auto_connect_available: boolean;
+  /** Instância criada pela conexão automática (e não preenchida à mão). */
+  managed: boolean;
+};
+
+export type WhatsAppQrCode = {
+  state: 'open' | 'connecting';
+  qrcode: string | null;
+  pairing_code: string | null;
 };
 
 export type Tenant = {

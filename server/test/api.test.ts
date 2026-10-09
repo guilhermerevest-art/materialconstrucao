@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { createApp } from '../src/app.js';
+import { createApp } from '../src/app.js';
 import { withSession } from '../src/db/session.js';
 import {
   login,
@@ -11,6 +11,7 @@ import {
   setupApp,
   startFakeEvolution,
   TEST_DATABASE_URL,
+  testConfig,
   type Fixtures,
 } from './helpers.js';
 
@@ -428,6 +429,105 @@ describeDb('API com banco de teste', () => {
         }),
       );
       expect(JSON.stringify(res.body)).not.toContain('token-secreto');
+    });
+  });
+
+  describe('conexão automática do WhatsApp', () => {
+    const QR = 'data:image/png;base64,iVBORw0KGgo=';
+    let autoApp: ReturnType<typeof createApp>;
+
+    beforeEach(() => {
+      autoApp = createApp({
+        pool,
+        config: { ...testConfig(TEST_DATABASE_URL!), evolutionServer: { url: evolution.url, token: 'chave-global' } },
+      });
+    });
+
+    it('cria a instância, devolve o QR Code e guarda a chave da instância', async () => {
+      evolution.route('POST', '/instance/create', 201, {
+        instance: { instanceName: 'x', status: 'created' },
+        hash: 'chave-da-instancia-9876',
+        qrcode: { base64: QR, code: '2@abc', pairingCode: null },
+      });
+      const admin = await login(autoApp, 'admin');
+      expect((await admin.get('/api/settings')).body.settings).toMatchObject({
+        auto_connect_available: true,
+        managed: false,
+        has_token: false,
+      });
+
+      const res = await admin.post('/api/settings/whatsapp/connect');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ state: 'connecting', qrcode: QR, pairing_code: null });
+
+      const created = evolution.requests[0]!;
+      expect(created.url).toBe('/instance/create');
+      expect(created.headers.apikey).toBe('chave-global');
+      expect(created.body).toMatchObject({ qrcode: true, integration: 'WHATSAPP-BAILEYS' });
+      expect(created.body.instanceName).toMatch(/^parceiro-[0-9a-f]{6}$/);
+
+      const settings = (await admin.get('/api/settings')).body.settings;
+      expect(settings).toMatchObject({
+        managed: true,
+        has_token: true,
+        token_hint: '••••9876',
+        evolution_api_url: null,
+        evolution_instance: created.body.instanceName,
+      });
+
+      // O envio do pedido usa a chave da instância, não a global.
+      evolution.requests.length = 0;
+      const seller = await login(autoApp, 'vendedor.a');
+      const id = (await createThreeItemOrder(seller)).body.order.id;
+      expect((await seller.post(`/api/orders/${id}/whatsapp`)).status).toBe(200);
+      expect(evolution.requests[0]!.url).toBe(`/message/sendMedia/${created.body.instanceName}`);
+      expect(evolution.requests[0]!.headers.apikey).toBe('chave-da-instancia-9876');
+    });
+
+    it('reaproveita a instância já criada e avisa quando já está conectada', async () => {
+      evolution.route('POST', '/instance/create', 201, { hash: { apikey: 'chave-antiga-1111' }, qrcode: { base64: QR } });
+      const admin = await login(autoApp, 'admin');
+      await admin.post('/api/settings/whatsapp/connect');
+      const name = evolution.requests[0]!.body.instanceName;
+      expect((await admin.get('/api/settings')).body.settings.token_hint).toBe('••••1111');
+
+      evolution.route('GET', `/instance/connect/${name}`, 200, { instance: { instanceName: name, state: 'open' } });
+      evolution.requests.length = 0;
+      const res = await admin.post('/api/settings/whatsapp/connect');
+      expect(res.body).toEqual({ state: 'open', qrcode: null, pairing_code: null });
+      expect(evolution.requests.map((r) => `${r.method} ${r.url}`)).toEqual([`GET /instance/connect/${name}`]);
+    });
+
+    it('desconecta apagando a instância e limpando as credenciais', async () => {
+      evolution.route('POST', '/instance/create', 201, { hash: 'chave-5555', qrcode: { base64: QR } });
+      const admin = await login(autoApp, 'admin');
+      await admin.post('/api/settings/whatsapp/connect');
+      const name = evolution.requests[0]!.body.instanceName;
+      evolution.requests.length = 0;
+      evolution.route('DELETE', `/instance/logout/${name}`, 400, { message: 'not connected' });
+      evolution.route('DELETE', `/instance/delete/${name}`, 200, { status: 'SUCCESS' });
+
+      const res = await admin.post('/api/settings/whatsapp/disconnect');
+      expect(res.status).toBe(200);
+      expect(res.body.settings).toMatchObject({ has_token: false, managed: false, evolution_instance: null });
+      expect(evolution.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        `DELETE /instance/logout/${name}`,
+        `DELETE /instance/delete/${name}`,
+      ]);
+      expect(evolution.requests[1]!.headers.apikey).toBe('chave-global');
+    });
+
+    it('recusa a conexão automática sem o servidor da plataforma configurado', async () => {
+      const admin = await login(app, 'admin');
+      const res = await admin.post('/api/settings/whatsapp/connect');
+      expect(res.status).toBe(422);
+      expect((await admin.get('/api/settings')).body.settings.auto_connect_available).toBe(false);
+    });
+
+    it('vendedor não conecta nem desconecta o WhatsApp', async () => {
+      const seller = await login(autoApp, 'vendedor.a');
+      expect((await seller.post('/api/settings/whatsapp/connect')).status).toBe(403);
+      expect((await seller.post('/api/settings/whatsapp/disconnect')).status).toBe(403);
     });
   });
 

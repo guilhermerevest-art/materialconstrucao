@@ -182,8 +182,9 @@ do build. Deploys de preview não mexem no banco.
    ao banco em sequência; se a VPS estiver em outra região, troque `regions` no
    `vercel.json` pela região mais próxima dela.
 4. Faça o deploy e entre com o admin criado no seed.
-5. Em **Administração → Configurações**, preencha URL, instância e API Key da
-   EvolutionAPI e use **Testar conexão**.
+5. Em **Administração → Configurações**, clique em **Conectar WhatsApp** e leia o
+   QR Code com o celular da loja (precisa de `EVOLUTION_API_URL` e `EVOLUTION_API_KEY`).
+   Sem essas variáveis, preencha URL, instância e API Key à mão e use **Testar conexão**.
 
 Na Vercel o cookie de sessão é `Secure` e a API confia no proxy da Vercel
 automaticamente. A função tem até 60 s, o que cobre o envio à EvolutionAPI
@@ -198,6 +199,13 @@ Atrás de proxy reverso com HTTPS, defina `TRUST_PROXY=1`.
 
 O envio usa a API v2: `POST {url}/message/sendMedia/{instância}` com o header `apikey`
 e o PDF em base64 (`mediatype: document`). As credenciais ficam na tabela `settings`.
+
+**Conexão automática.** Com `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` (Global API Key)
+definidas, o admin de cada loja conecta o WhatsApp sozinho: **Conectar WhatsApp** cria a
+instância (`POST /instance/create`, nome `{slug}-{aleatório}`), mostra o QR Code (renovado a
+cada 30 s via `GET /instance/connect`) e salva a chave da instância, que é a usada no envio.
+**Desconectar** faz logout e apaga a instância. A Global API Key nunca vai para o banco
+nem para o navegador. Quem tem servidor próprio ainda pode preencher os dados à mão.
 A chave nunca volta inteira para o navegador. Se o envio falhar, o vendedor vê o motivo
 e um botão para baixar o PDF e mandar manualmente.
 

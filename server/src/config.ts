@@ -20,6 +20,8 @@ const envSchema = z.object({
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   TRUST_PROXY: z.string().optional(),
   APP_TIMEZONE: z.string().default('America/Sao_Paulo'),
+  EVOLUTION_API_URL: z.string().optional(),
+  EVOLUTION_API_KEY: z.string().optional(),
   EVOLUTION_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   WEB_DIST_DIR: z.string().optional(),
   VERCEL: z.string().optional(),
@@ -38,6 +40,11 @@ export type Config = {
   trustProxy: boolean | number | string;
   timeZone: string;
   evolutionTimeoutMs: number;
+  /**
+   * Servidor da EvolutionAPI da plataforma (Global API Key). Com ele, cada loja
+   * conecta o WhatsApp sozinha em Configurações, lendo o QR Code.
+   */
+  evolutionServer?: { url: string; token: string };
   /** Pasta com o build do frontend, servida pela API em produção. */
   webDistDir?: string;
 };
@@ -61,6 +68,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   } catch {
     throw new Error(`APP_TIMEZONE inválido: ${e.APP_TIMEZONE}`);
   }
+  const evolutionUrl = e.EVOLUTION_API_URL?.trim().replace(/\/+$/, '');
+  const evolutionKey = e.EVOLUTION_API_KEY?.trim();
+  if (evolutionUrl && !/^https?:\/\//.test(evolutionUrl)) {
+    throw new Error('EVOLUTION_API_URL precisa começar com http:// ou https://');
+  }
   const onVercel = Boolean(e.VERCEL);
   return {
     env: e.NODE_ENV,
@@ -72,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: e.TRUST_PROXY === undefined && onVercel ? true : parseTrustProxy(e.TRUST_PROXY),
     timeZone: e.APP_TIMEZONE,
     evolutionTimeoutMs: e.EVOLUTION_TIMEOUT_MS,
+    evolutionServer: evolutionUrl && evolutionKey ? { url: evolutionUrl, token: evolutionKey } : undefined,
     webDistDir: e.WEB_DIST_DIR,
   };
 }
