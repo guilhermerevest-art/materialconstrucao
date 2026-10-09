@@ -160,3 +160,25 @@ export type Dashboard = {
   >[];
   by_store: { id: number; name: string; orders_today: number; orders_today_amount: number; quotes_today: number }[];
 };
+
+export type ReportType = 'dias' | 'lojas' | 'vendedores' | 'produtos' | 'clientes' | 'formas-de-pagamento';
+
+export type ReportTotals = { count: number; total_amount: number; discount_amount: number; average_amount: number };
+
+export type ReportRow = {
+  id?: number;
+  name?: string;
+  day?: string;
+  store_name?: string | null;
+  whatsapp?: string;
+  last_date?: string;
+  code?: string | null;
+  unit?: string;
+  quantity?: number;
+  count: number;
+  total_amount: number;
+  discount_amount?: number;
+  average_amount?: number;
+};
+
+export type Report = { rows: ReportRow[]; totals: ReportTotals };

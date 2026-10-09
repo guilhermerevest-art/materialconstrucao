@@ -11,6 +11,7 @@ import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StoresPage } from './pages/StoresPage';
 import { SuperLoginPage } from './pages/SuperLoginPage';
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
       { path: 'pedidos/:id/editar', element: <OrderEditorPage /> },
       { path: 'clientes', element: <ClientsPage /> },
       { path: 'produtos', element: <ProductsPage /> },
+      { path: 'relatorios', element: <ReportsPage /> },
       {
         element: <RequireAdmin />,
         children: [

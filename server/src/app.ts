@@ -14,6 +14,7 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { ordersRouter } from './routes/orders.js';
 import { paymentMethodsRouter } from './routes/paymentMethods.js';
 import { productsRouter } from './routes/products.js';
+import { reportsRouter } from './routes/reports.js';
 import { settingsRouter } from './routes/settings.js';
 import { storesRouter } from './routes/stores.js';
 import { superRouter } from './routes/super.js';
@@ -53,6 +54,7 @@ export function createApp(ctx: AppContext) {
   api.use('/products', productsRouter(ctx));
   api.use('/orders', ordersRouter(ctx));
   api.use('/payment-methods', paymentMethodsRouter(ctx));
+  api.use('/reports', reportsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));
   api.use('/settings', requireAdmin, settingsRouter(ctx));
