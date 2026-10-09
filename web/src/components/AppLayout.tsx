@@ -22,6 +22,7 @@ const MAIN_NAV = [
   { to: '/pedidos', label: 'Pedidos', end: false },
   { to: '/clientes', label: 'Clientes', end: false },
   { to: '/produtos', label: 'Produtos', end: false },
+  { to: '/relatorios', label: 'Relatórios', end: false },
 ];
 
 const ADMIN_NAV = [

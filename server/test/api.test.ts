@@ -813,4 +813,81 @@ describeDb('API com banco de teste', () => {
       expect(pdf.status).toBe(200);
     });
   });
+
+  describe('relatórios', () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+
+    async function launch(agent: ReturnType<typeof request.agent>, status: 'quote' | 'order', quantity: number, extra = {}) {
+      const res = await agent
+        .post('/api/orders')
+        .send({ client_id: f.clientId, status, items: [{ product_id: f.products.cimento, quantity }], ...extra });
+      expect(res.status).toBe(201);
+      return res.body.order;
+    }
+
+    it('agrupa pedidos por loja, vendedor, produto, cliente, forma de pagamento e dia', async () => {
+      const admin = await login(app, 'admin');
+      const sellerA = await login(app, 'vendedor.a');
+      const sellerB = await login(app, 'vendedor.b');
+      const pix = (await admin.post('/api/payment-methods').send({ name: 'PIX' })).body.payment_method;
+      await launch(sellerA, 'order', 2, { payment_method_id: pix.id }); // 77,80
+      await launch(sellerA, 'order', 1, { discount_type: 'amount', discount_value: 8.9 }); // 30,00
+      await launch(sellerB, 'order', 3); // 116,70
+      await launch(sellerA, 'quote', 10); // orçamento: fora do relatório de pedidos
+
+      const period = { from: today, to: today };
+      const lojas = await admin.get('/api/reports/lojas').query(period);
+      expect(lojas.status).toBe(200);
+      expect(lojas.body.totals).toEqual({ count: 3, total_amount: 224.5, discount_amount: 8.9, average_amount: 74.83 });
+      expect(lojas.body.rows.map((r: { name: string; total_amount: number }) => [r.name, r.total_amount])).toEqual([
+        ['Loja B', 116.7],
+        ['Loja A', 107.8],
+      ]);
+
+      const vendedores = await admin.get('/api/reports/vendedores').query(period);
+      expect(vendedores.body.rows[0]).toMatchObject({ name: 'Vendedor B', store_name: 'Loja B', count: 1 });
+
+      const produtos = await admin.get('/api/reports/produtos').query(period);
+      expect(produtos.body.rows).toEqual([
+        expect.objectContaining({ code: 'CIM-50', quantity: 6, count: 3, total_amount: 233.4, unit: 'SC' }),
+      ]);
+
+      const clientes = await admin.get('/api/reports/clientes').query(period);
+      expect(clientes.body.rows).toEqual([expect.objectContaining({ name: 'Maria da Silva', count: 3, total_amount: 224.5 })]);
+
+      const formas = await admin.get('/api/reports/formas-de-pagamento').query(period);
+      expect(formas.body.rows.map((r: { name: string; count: number }) => [r.name, r.count])).toEqual([
+        ['Não informada', 2],
+        ['PIX', 1],
+      ]);
+
+      const dias = await admin.get('/api/reports/dias').query(period);
+      expect(dias.body.rows).toEqual([expect.objectContaining({ day: today, count: 3 })]);
+
+      const orcamentos = await admin.get('/api/reports/lojas').query({ ...period, status: 'quote' });
+      expect(orcamentos.body.totals).toMatchObject({ count: 1, total_amount: 389 });
+
+      const ontem = await admin.get('/api/reports/lojas').query({ from: '2000-01-01', to: '2000-01-31' });
+      expect(ontem.body).toEqual({ rows: [], totals: { count: 0, total_amount: 0, discount_amount: 0, average_amount: 0 } });
+    });
+
+    it('vendedor só vê a própria loja, mesmo pedindo outra', async () => {
+      const sellerA = await login(app, 'vendedor.a');
+      const sellerB = await login(app, 'vendedor.b');
+      await launch(sellerA, 'order', 1);
+      await launch(sellerB, 'order', 2);
+
+      const res = await sellerA.get('/api/reports/lojas').query({ store_id: f.storeB });
+      expect(res.status).toBe(200);
+      expect(res.body.rows.map((r: { name: string }) => r.name)).toEqual(['Loja A']);
+      expect(res.body.totals.count).toBe(1);
+    });
+
+    it('recusa relatório desconhecido e período invertido', async () => {
+      const admin = await login(app, 'admin');
+      expect((await admin.get('/api/reports/senhas')).status).toBe(404);
+      const res = await admin.get('/api/reports/lojas').query({ from: '2026-02-01', to: '2026-01-01' });
+      expect(res.status).toBe(400);
+    });
+  });
 });
