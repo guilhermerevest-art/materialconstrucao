@@ -144,6 +144,8 @@ export async function startFakeEvolution() {
   const requests: CapturedRequest[] = [];
   let status = 201;
   let responseBody: unknown = { key: { id: 'MSG1' }, status: 'PENDING' };
+  // Resposta por rota (método + caminho); o que não casar usa a resposta padrão.
+  const routes = new Map<string, { status: number; body: unknown }>();
 
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -151,8 +153,9 @@ export async function startFakeEvolution() {
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8');
       requests.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body: raw ? JSON.parse(raw) : null });
-      res.writeHead(status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(responseBody));
+      const route = routes.get(`${req.method} ${req.url}`);
+      res.writeHead(route?.status ?? status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(route ? route.body : responseBody));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -164,6 +167,10 @@ export async function startFakeEvolution() {
     respondWith(nextStatus: number, body: unknown) {
       status = nextStatus;
       responseBody = body;
+      routes.clear();
+    },
+    route(method: string, path: string, nextStatus: number, body: unknown) {
+      routes.set(`${method} ${path}`, { status: nextStatus, body });
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
