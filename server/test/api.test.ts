@@ -517,6 +517,28 @@ describeDb('API com banco de teste', () => {
       expect(evolution.requests[1]!.headers.apikey).toBe('chave-global');
     });
 
+    it('aponta a EVOLUTION_API_KEY quando a Evolution recusa a Global API Key', async () => {
+      evolution.route('POST', '/instance/create', 401, { status: 401, error: 'Unauthorized', response: { message: 'Unauthorized' } });
+      const admin = await login(autoApp, 'admin');
+      const res = await admin.post('/api/settings/whatsapp/connect');
+      expect(res.status).toBe(502);
+      expect(res.body.error).toContain('EVOLUTION_API_KEY');
+      expect((await admin.get('/api/settings')).body.settings.has_token).toBe(false);
+    });
+
+    it('pede para reconectar quando a instância automática some da Evolution', async () => {
+      evolution.route('POST', '/instance/create', 201, { hash: 'chave-7777', qrcode: { base64: QR } });
+      const admin = await login(autoApp, 'admin');
+      await admin.post('/api/settings/whatsapp/connect');
+      evolution.respondWith(404, { status: 404, error: 'Not Found' });
+
+      const seller = await login(autoApp, 'vendedor.a');
+      const id = (await createThreeItemOrder(seller)).body.order.id;
+      const res = await seller.post(`/api/orders/${id}/whatsapp`);
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe('A instância do WhatsApp não existe mais na EvolutionAPI. Conecte o WhatsApp de novo em Configurações.');
+    });
+
     it('recusa a conexão automática sem o servidor da plataforma configurado', async () => {
       const admin = await login(app, 'admin');
       const res = await admin.post('/api/settings/whatsapp/connect');

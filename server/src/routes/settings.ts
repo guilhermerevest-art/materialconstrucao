@@ -13,6 +13,7 @@ import {
   describeEvolutionError,
   EvolutionError,
   getConnectionState,
+  keySourceOf,
   loadEvolutionSettings,
   type EvolutionQrCode,
 } from '../lib/evolution.js';
@@ -145,7 +146,7 @@ export function settingsRouter(ctx: AppContext) {
       const state = await getConnectionState(settings, ctx.config.evolutionTimeoutMs);
       res.json({ state });
     } catch (err) {
-      throw new HttpError(502, describeEvolutionError(err));
+      throw new HttpError(502, describeEvolutionError(err, keySourceOf(settings, server)));
     }
   });
 
@@ -189,7 +190,7 @@ export function settingsRouter(ctx: AppContext) {
       }
     } catch (err) {
       console.error('Falha ao conectar a instância na EvolutionAPI:', err);
-      throw new HttpError(502, describeEvolutionError(err));
+      throw new HttpError(502, describeEvolutionError(err, 'platform'));
     }
 
     res.json({ state: qr.state, qrcode: qr.qrcode, pairing_code: qr.pairingCode });
@@ -209,7 +210,7 @@ export function settingsRouter(ctx: AppContext) {
         await deleteInstance(server, current.evolution_instance!, timeoutMs);
       } catch (err) {
         console.error('Falha ao apagar a instância na EvolutionAPI:', err);
-        throw new HttpError(502, describeEvolutionError(err));
+        throw new HttpError(502, describeEvolutionError(err, 'platform'));
       }
     }
     const result = await withSession(ctx.pool, me, (db) =>

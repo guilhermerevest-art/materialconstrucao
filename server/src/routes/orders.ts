@@ -5,7 +5,7 @@ import { currentUser, requireAdmin, type AuthUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
-import { describeEvolutionError, loadEvolutionSettings, sendPdfDocument } from '../lib/evolution.js';
+import { describeEvolutionError, keySourceOf, loadEvolutionSettings, sendPdfDocument } from '../lib/evolution.js';
 import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
@@ -311,7 +311,7 @@ export function ordersRouter(ctx: AppContext) {
     if (!settings) {
       throw new HttpError(
         422,
-        'O envio por WhatsApp ainda não foi configurado. Peça ao administrador para preencher a EvolutionAPI em Configurações.',
+        'O envio por WhatsApp ainda não foi configurado. Peça ao administrador para conectar o WhatsApp em Configurações.',
         'WHATSAPP_NOT_CONFIGURED',
       );
     }
@@ -334,7 +334,7 @@ export function ordersRouter(ctx: AppContext) {
       );
     } catch (err) {
       console.error(`Falha ao enviar o pedido ${id} pela EvolutionAPI:`, err);
-      throw new HttpError(502, describeEvolutionError(err), 'WHATSAPP_FAILED');
+      throw new HttpError(502, describeEvolutionError(err, keySourceOf(settings, config.evolutionServer)), 'WHATSAPP_FAILED');
     }
 
     const sentAt = await withSession(pool, user, async (db) => {

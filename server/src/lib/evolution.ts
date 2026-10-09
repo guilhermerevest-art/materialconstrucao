@@ -175,13 +175,51 @@ export async function deleteInstance(server: EvolutionServer, instance: string, 
   }
 }
 
+/**
+ * De onde vem a chave da chamada, para a mensagem de erro apontar onde corrigir:
+ * - manual: URL, instância e chave preenchidas à mão em Configurações;
+ * - platform: Global API Key da plataforma (EVOLUTION_API_URL e EVOLUTION_API_KEY), ao criar ou apagar instâncias;
+ * - managed: chave da instância criada pela conexão automática.
+ */
+export type EvolutionKeySource = 'manual' | 'platform' | 'managed';
+
+/** Instância criada pela conexão automática quando está no servidor da plataforma. */
+export function keySourceOf(settings: EvolutionSettings, server: EvolutionServer | undefined): EvolutionKeySource {
+  return server && settings.url === server.url ? 'managed' : 'manual';
+}
+
+const PLATFORM_UNREACHABLE =
+  'Não foi possível conectar à EvolutionAPI da plataforma. Confira a variável EVOLUTION_API_URL do servidor.';
+
+const FIX_HINTS: Record<EvolutionKeySource, { unreachable: string; key: string; notFound: string }> = {
+  manual: {
+    unreachable: 'Não foi possível conectar à EvolutionAPI. Confira a URL em Configurações.',
+    key: 'A EvolutionAPI recusou a API Key. Confira a chave em Configurações.',
+    notFound: 'Instância não encontrada na EvolutionAPI. Confira o nome da instância em Configurações.',
+  },
+  platform: {
+    unreachable: PLATFORM_UNREACHABLE,
+    key:
+      'A EvolutionAPI recusou a Global API Key. Confira a variável EVOLUTION_API_KEY do servidor: ' +
+      'ela precisa ser igual à AUTHENTICATION_API_KEY da Evolution.',
+    notFound:
+      'A EvolutionAPI não reconheceu o endereço. Confira se EVOLUTION_API_URL é só o endereço do servidor, sem /manager.',
+  },
+  managed: {
+    unreachable: PLATFORM_UNREACHABLE,
+    key: 'A EvolutionAPI recusou a chave da instância. Desconecte e conecte o WhatsApp de novo em Configurações.',
+    notFound: 'A instância do WhatsApp não existe mais na EvolutionAPI. Conecte o WhatsApp de novo em Configurações.',
+  },
+};
+
 /** Motivo da falha em linguagem de balcão, para mostrar junto do aviso de erro. */
-export function describeEvolutionError(err: unknown): string {
+export function describeEvolutionError(err: unknown, source: EvolutionKeySource = 'manual'): string {
   if (!(err instanceof EvolutionError)) return 'Erro inesperado ao falar com a EvolutionAPI.';
+  const hints = FIX_HINTS[source];
   if (err.kind === 'timeout') return 'A EvolutionAPI demorou demais para responder.';
-  if (err.kind === 'unreachable') return 'Não foi possível conectar à EvolutionAPI. Confira a URL em Configurações.';
+  if (err.kind === 'unreachable') return hints.unreachable;
   if (err.body?.includes('"exists":false')) return 'Este número não tem WhatsApp. Confira o cadastro do cliente.';
-  if (err.status === 401 || err.status === 403) return 'A EvolutionAPI recusou a API Key. Confira a chave em Configurações.';
-  if (err.status === 404) return 'Instância não encontrada na EvolutionAPI. Confira o nome da instância em Configurações.';
+  if (err.status === 401 || err.status === 403) return hints.key;
+  if (err.status === 404) return hints.notFound;
   return `A EvolutionAPI respondeu com erro (HTTP ${err.status}).`;
 }
