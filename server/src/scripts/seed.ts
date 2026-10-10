@@ -1,24 +1,32 @@
 /**
- * Cria o primeiro administrador e, opcionalmente, dados de exemplo.
+ * Cria a lojamestre (se ainda não existir), o primeiro administrador dela e,
+ * opcionalmente, dados de exemplo.
  *
  *   npm run db:seed -- --email admin@empresa.com.br --name "Fulano" [--password "..."]
- *   npm run db:seed -- --demo
+ *   npm run db:seed -- --demo --email admin@demo.local --password admin1234
+ *   npm run db:seed -- --tenant loja-do-joao --tenant-name "Loja do João" --username joao
  *
+ * --tenant é o slug digitado no login (padrão: "default"). O usuário do admin é
+ * --username ou, sem ele, a parte do e-mail antes do "@".
  * Sem --password, gera uma senha aleatória e mostra no terminal.
- * --demo cria duas lojas, um vendedor em cada e um catálogo de exemplo
- * (só se ainda não houver lojas). Não cria clientes, para nenhum teste
- * mandar WhatsApp para um número real por engano.
+ * --demo cria duas lojas, um vendedor em cada e um catálogo de exemplo (só se a
+ * lojamestre ainda não tiver lojas). Não cria clientes, para nenhum teste mandar
+ * WhatsApp para um número real por engano.
  */
 import { randomBytes } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { hashPassword } from '../auth.js';
 import { loadEnvFile } from '../config.js';
 import { createPool } from '../db/pool.js';
-import { withTransaction } from '../db/session.js';
+import { setTenantContext, withTransaction } from '../db/session.js';
+import { insertDefaultPaymentMethods } from '../routes/paymentMethods.js';
 
 const { values } = parseArgs({
   options: {
+    tenant: { type: 'string', default: 'default' },
+    'tenant-name': { type: 'string' },
     email: { type: 'string' },
+    username: { type: 'string' },
     name: { type: 'string', default: 'Administrador' },
     password: { type: 'string' },
     demo: { type: 'boolean', default: false },
@@ -31,8 +39,14 @@ if (!databaseUrl) {
   console.error('Defina DATABASE_URL.');
   process.exit(1);
 }
-if (!values.email && !values.demo) {
-  console.error('Informe --email para criar o administrador e/ou --demo para dados de exemplo.');
+if (!values.email && !values.username && !values.demo) {
+  console.error('Informe --email ou --username para criar o administrador e/ou --demo para dados de exemplo.');
+  process.exit(1);
+}
+
+const slug = values.tenant.trim().toLowerCase();
+if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+  console.error('--tenant deve ter só letras minúsculas, números e hífens (ex.: loja-do-joao).');
   process.exit(1);
 }
 
@@ -70,29 +84,52 @@ const DEMO_PRODUCTS: [code: string, name: string, unit: string, price: number][]
 const pool = createPool(databaseUrl, { caCert: process.env.DATABASE_CA_CERT });
 try {
   await withTransaction(pool, async (db) => {
+    // tenants não tem RLS (o login lê antes de haver sessão). O resto tem, e só
+    // enxerga a lojamestre depois do setTenantContext.
+    const found = await db.query<{ id: number }>('select id from tenants where lower(slug) = $1', [slug]);
+    let tenantId = found.rows[0]?.id;
+    if (tenantId === undefined) {
+      const created = await db.query<{ id: number }>('insert into tenants (slug, name) values ($1, $2) returning id', [
+        slug,
+        values['tenant-name']?.trim() || (slug === 'default' ? 'Lojamestre padrão' : slug),
+      ]);
+      tenantId = created.rows[0]!.id;
+      console.log(`Lojamestre criada: ${slug}`);
+    }
+    await setTenantContext(db, tenantId);
+
+    const settings = await db.query('select 1 from settings');
+    if (!settings.rowCount) await db.query('insert into settings (tenant_id) values ($1)', [tenantId]);
+    const methods = await db.query('select 1 from payment_methods limit 1');
+    if (!methods.rowCount) await insertDefaultPaymentMethods(db, tenantId);
+
     if (values.demo) {
-      const { rows } = await db.query('select count(*) as total from stores');
-      if (Number(rows[0].total) > 0) {
-        console.log('Já existem lojas cadastradas; dados de exemplo não foram criados.');
+      const { rows } = await db.query<{ total: number }>('select count(*) as total from stores');
+      if (Number(rows[0]!.total) > 0) {
+        console.log('A lojamestre já tem lojas; dados de exemplo não foram criados.');
       } else {
         const stores = await db.query<{ id: number; name: string }>(
-          `insert into stores (name, address, phone) values
-             ('Loja Centro', 'Av. Brasil, 1500 - Centro', '(11) 3333-1000'),
-             ('Loja Jardim', 'Rua das Palmeiras, 320 - Jardim América', '(11) 3333-2000')
+          `insert into stores (tenant_id, name, address, phone) values
+             ($1, 'Loja Centro', 'Av. Brasil, 1500 - Centro', '(11) 3333-1000'),
+             ($1, 'Loja Jardim', 'Rua das Palmeiras, 320 - Jardim América', '(11) 3333-2000')
            returning id, name`,
+          [tenantId],
         );
         const demoHash = await hashPassword(DEMO_PASSWORD);
         const [centro, jardim] = stores.rows;
         await db.query(
-          `insert into users (name, email, password_hash, role, store_id) values
-             ('Carlos Vendedor', 'carlos@demo.local', $1, 'seller', $2),
-             ('Joana Vendedora', 'joana@demo.local', $1, 'seller', $3)`,
-          [demoHash, centro!.id, jardim!.id],
+          `insert into users (tenant_id, name, username, email, password_hash, role, store_id) values
+             ($1, 'Carlos Vendedor', 'carlos', 'carlos@demo.local', $2, 'seller', $3),
+             ($1, 'Joana Vendedora', 'joana', 'joana@demo.local', $2, 'seller', $4)
+           on conflict (tenant_id, lower(username)) do nothing`,
+          [tenantId, demoHash, centro!.id, jardim!.id],
         );
         await db.query(
-          `insert into products (code, name, unit, price)
-           select * from unnest($1::text[], $2::text[], $3::text[], $4::numeric[])`,
+          `insert into products (tenant_id, code, name, unit, price)
+           select $1, * from unnest($2::text[], $3::text[], $4::text[], $5::numeric[])
+           on conflict do nothing`,
           [
+            tenantId,
             DEMO_PRODUCTS.map((p) => p[0]),
             DEMO_PRODUCTS.map((p) => p[1]),
             DEMO_PRODUCTS.map((p) => p[2]),
@@ -100,27 +137,31 @@ try {
           ],
         );
         console.log(`Dados de exemplo criados: 2 lojas, ${DEMO_PRODUCTS.length} produtos e 2 vendedores.`);
-        console.log(`  carlos@demo.local (Loja Centro) e joana@demo.local (Loja Jardim), senha ${DEMO_PASSWORD}`);
+        console.log(`  Usuários carlos (Loja Centro) e joana (Loja Jardim), senha ${DEMO_PASSWORD}`);
       }
     }
 
-    if (values.email) {
-      const email = values.email.trim().toLowerCase();
-      const existing = await db.query('select 1 from users where lower(email) = $1', [email]);
-      if (existing.rowCount) {
-        console.log(`O usuário ${email} já existe; nada foi alterado.`);
-        return;
-      }
-      const password = values.password ?? randomBytes(9).toString('base64url');
-      if (password.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
-      const firstStore = await db.query<{ id: number }>('select id from stores order by id limit 1');
-      await db.query(
-        `insert into users (name, email, password_hash, role, store_id) values ($1, $2, $3, 'admin', $4)`,
-        [values.name, email, await hashPassword(password), firstStore.rows[0]?.id ?? null],
-      );
-      console.log(`Administrador criado: ${email}`);
-      if (!values.password) console.log(`Senha gerada: ${password}  (troque em "Alterar senha" depois do primeiro acesso)`);
+    const email = values.email?.trim().toLowerCase() || null;
+    const username = (values.username ?? email?.split('@')[0] ?? '').trim().toLowerCase();
+    if (!username) return;
+    if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+      throw new Error('O usuário precisa ter de 3 a 32 caracteres (letras, números, ponto, hífen ou underline).');
     }
+    const existing = await db.query('select 1 from users where lower(username) = $1', [username]);
+    if (existing.rowCount) {
+      console.log(`O usuário ${username} já existe na lojamestre ${slug}; nada foi alterado.`);
+      return;
+    }
+    const password = values.password ?? randomBytes(9).toString('base64url');
+    if (password.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+    const firstStore = await db.query<{ id: number }>('select id from stores order by id limit 1');
+    await db.query(
+      `insert into users (tenant_id, name, username, email, password_hash, role, store_id)
+       values ($1, $2, $3, $4, $5, 'admin', $6)`,
+      [tenantId, values.name, username, email, await hashPassword(password), firstStore.rows[0]?.id ?? null],
+    );
+    console.log(`Administrador criado na lojamestre ${slug}: usuário ${username}`);
+    if (!values.password) console.log(`Senha gerada: ${password}  (troque em "Alterar senha" depois do primeiro acesso)`);
   });
 } catch (err) {
   console.error((err as Error).message);

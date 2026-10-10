@@ -448,10 +448,10 @@ describeDb('módulo fiscal (ACBr API)', () => {
       expect(again.status).toBe(409);
       expect(again.body.error).toMatch(/já tem a NFC-e nº 10 autorizada/);
 
-      // Pedido com nota não pode ser excluído.
+      // Pedido confirmado não é excluído (com nota, nem depois de cancelado: ver cancel.test.ts).
       const removed = await admin.delete(`/api/orders/${order.id}`);
       expect(removed.status).toBe(409);
-      expect(removed.body.error).toMatch(/nota fiscal/);
+      expect(removed.body.error).toMatch(/Pedido confirmado não é excluído/);
 
       // DANFE vem da ACBr API.
       acbr.route('GET', '/nfce/nfce_1/pdf', { status: 200, body: Buffer.from('%PDF-1.4 danfe'), contentType: 'application/pdf' });

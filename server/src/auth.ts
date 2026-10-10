@@ -11,6 +11,14 @@ import { HttpError } from './errors.js';
 export const SESSION_COOKIE = 'oms_session';
 export const SUPER_SESSION_COOKIE = 'oms_super_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
+/**
+ * Sessão do aparelho que fica com o monitor aberto (a TV do setor). O monitor renova
+ * a sessão enquanto consulta, então ela só expira se o aparelho ficar 30 dias sem abrir
+ * o monitor. Desativar o usuário ou trocar a senha derruba esta sessão como as outras.
+ */
+export const MONITOR_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+// O monitor consulta a cada 10 s; renovar o cookie uma vez por hora já basta.
+const MONITOR_RENEW_EVERY_SECONDS = 60 * 60;
 const BCRYPT_ROUNDS = 10;
 // Os dois cookies são assinados com o mesmo segredo. O "aud" impede que a sessão
 // de um usuário de lojamestre seja aceita como sessão de super admin (e vice-versa).
@@ -26,6 +34,8 @@ export type AuthUser = SessionUser & {
   token_version: number;
   /** Lojamestre desativada pelo super admin derruba a sessão de todos os usuários dela. */
   tenant_active: boolean;
+  /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
+  finance_enabled: boolean;
 };
 
 export type SuperAdmin = {
@@ -44,10 +54,12 @@ export async function loadAuthUser(pool: pg.Pool, id: number, tenantId: number):
     await setTenantContext(db, tenantId);
     const { rows } = await db.query<AuthUser>(
       `select u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id,
-              u.active, u.token_version, s.name as store_name, t.active as tenant_active
+              u.active, u.token_version, s.name as store_name, t.active as tenant_active,
+              coalesce(st.finance_enabled, false) as finance_enabled
          from users u
          join tenants t on t.id = u.tenant_id
          left join stores s on s.id = u.store_id
+         left join settings st on st.tenant_id = u.tenant_id
         where u.id = $1`,
       [id],
     );
@@ -64,8 +76,8 @@ export async function loadSuperAdmin(db: Db, id: number): Promise<SuperAdmin | n
 }
 
 export function toPublicUser(user: AuthUser) {
-  const { id, name, username, email, role, store_id, store_name, tenant_id } = user;
-  return { id, tenant_id, name, username, email, role, store_id, store_name };
+  const { id, name, username, email, role, store_id, store_name, tenant_id, finance_enabled } = user;
+  return { id, tenant_id, name, username, email, role, store_id, store_name, finance_enabled };
 }
 
 export function toPublicSuperAdmin(sa: SuperAdmin) {
@@ -80,17 +92,18 @@ function issueCookie(
   subject: string,
   claims: Record<string, number>,
   secure: boolean,
+  ttlSeconds = SESSION_TTL_SECONDS,
 ) {
   const token = jwt.sign(claims, secret, {
     subject,
     audience,
-    expiresIn: SESSION_TTL_SECONDS,
+    expiresIn: ttlSeconds,
   });
   res.cookie(name, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure,
-    maxAge: SESSION_TTL_SECONDS * 1000,
+    maxAge: ttlSeconds * 1000,
     path: '/',
   });
 }
@@ -99,10 +112,19 @@ export function issueSession(
   res: Response,
   config: Config,
   user: { id: number; tenant_id: number; token_version: number },
+  ttlSeconds = SESSION_TTL_SECONDS,
 ) {
   // tid: a lojamestre do usuário, para a sessão ser lida já no contexto de RLS dela.
   const claims = { tv: user.token_version, tid: user.tenant_id };
-  issueCookie(res, SESSION_COOKIE, config.jwtSecret, USER_AUDIENCE, String(user.id), claims, config.cookieSecure);
+  issueCookie(res, SESSION_COOKIE, config.jwtSecret, USER_AUDIENCE, String(user.id), claims, config.cookieSecure, ttlSeconds);
+}
+
+/** Estende a sessão para a duração de monitor, no máximo uma vez por hora. Chamar depois do authenticate. */
+export function keepMonitorSession(req: Request, res: Response, config: Config) {
+  const user = currentUser(req);
+  const remaining = (req.sessionExpiresAt ?? 0) - Math.floor(Date.now() / 1000);
+  if (remaining > MONITOR_SESSION_TTL_SECONDS - MONITOR_RENEW_EVERY_SECONDS) return;
+  issueSession(res, config, user, MONITOR_SESSION_TTL_SECONDS);
 }
 
 export function issueSuperSession(res: Response, config: Config, sa: { id: number; token_version: number }) {
@@ -144,6 +166,7 @@ export function authenticate(ctx: AppContext): RequestHandler {
     }
 
     req.user = user;
+    req.sessionExpiresAt = payload.exp;
     next();
   };
 }

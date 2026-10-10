@@ -14,12 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Checkbox, Field, Input } from '@/components/ui/input';
+import { Checkbox, Field, Input, NativeSelect } from '@/components/ui/input';
 import { Alert, Badge, Skeleton } from '@/components/ui/misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { api, ApiError } from '@/lib/api';
 import { useDocumentTitle } from '@/lib/hooks';
-import type { PaymentMethod } from '@/lib/types';
+import { KIND_LABEL, termsLabel } from '@/lib/finance';
+import type { PaymentKind, PaymentMethod } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 function PaymentMethodFormDialog({
@@ -34,18 +35,33 @@ function PaymentMethodFormDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [active, setActive] = useState(true);
+  const [kind, setKind] = useState<PaymentKind>('other');
+  const [installments, setInstallments] = useState('1');
+  const [firstDue, setFirstDue] = useState('0');
+  const [intervalDays, setIntervalDays] = useState('30');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setName(method?.name ?? '');
     setActive(method?.active ?? true);
+    setKind(method?.kind ?? 'other');
+    setInstallments(String(method?.installments ?? 1));
+    setFirstDue(String(method?.first_due_days ?? 0));
+    setIntervalDays(String(method?.interval_days ?? 30));
     setError(null);
   }, [open, method]);
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name, active };
+      const body = {
+        name,
+        active,
+        kind,
+        installments: Number(installments) || 1,
+        first_due_days: Number(firstDue) || 0,
+        interval_days: Number(intervalDays) || 30,
+      };
       return method
         ? api<{ payment_method: PaymentMethod }>(`/payment-methods/${method.id}`, { method: 'PUT', body })
         : api<{ payment_method: PaymentMethod }>('/payment-methods', { method: 'POST', body });
@@ -83,6 +99,50 @@ function PaymentMethodFormDialog({
           >
             <Input id="forma-nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required autoFocus />
           </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tipo" htmlFor="forma-tipo" hint="Dinheiro conta na gaveta do caixa; crediário usa o limite do cliente.">
+              <NativeSelect id="forma-tipo" value={kind} onChange={(e) => setKind(e.target.value as PaymentKind)}>
+                {(Object.keys(KIND_LABEL) as PaymentKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABEL[k]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Parcelas" htmlFor="forma-parcelas">
+              <Input
+                id="forma-parcelas"
+                inputMode="numeric"
+                value={installments}
+                onChange={(e) => setInstallments(e.target.value.replace(/\D/g, ''))}
+                maxLength={2}
+              />
+            </Field>
+            <Field label="1º vencimento (dias)" htmlFor="forma-primeiro" hint="0 = no dia da venda (à vista).">
+              <Input
+                id="forma-primeiro"
+                inputMode="numeric"
+                value={firstDue}
+                onChange={(e) => setFirstDue(e.target.value.replace(/\D/g, ''))}
+                maxLength={3}
+              />
+            </Field>
+            {Number(installments) > 1 && (
+              <Field label="Entre parcelas (dias)" htmlFor="forma-intervalo">
+                <Input
+                  id="forma-intervalo"
+                  inputMode="numeric"
+                  value={intervalDays}
+                  onChange={(e) => setIntervalDays(e.target.value.replace(/\D/g, ''))}
+                  maxLength={3}
+                />
+              </Field>
+            )}
+          </div>
+          <p className="text-[13px] text-muted-foreground">
+            Condição: {termsLabel({ installments: Number(installments) || 1, first_due_days: Number(firstDue) || 0, interval_days: Number(intervalDays) || 30 })}.
+            Só vale com o financeiro ligado (Configurações).
+          </p>
           {method && (
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} />
@@ -158,6 +218,8 @@ export function PaymentMethodsPage() {
             <THead>
               <TR>
                 <TH className="pl-4">Forma de pagamento</TH>
+                <TH>Tipo</TH>
+                <TH>Condição</TH>
                 <TH className="text-right">Pedidos</TH>
                 <TH>Situação</TH>
                 <TH className="pr-4">
@@ -169,6 +231,8 @@ export function PaymentMethodsPage() {
               {methods.data.map((method) => (
                 <TR key={method.id} className={cn(!method.active && 'text-muted-foreground')}>
                   <TD className="pl-4 font-medium">{method.name}</TD>
+                  <TD className="text-muted-foreground">{KIND_LABEL[method.kind]}</TD>
+                  <TD className="text-muted-foreground">{termsLabel(method)}</TD>
                   <TD className="text-right tabular-nums">{method.orders_count}</TD>
                   <TD>
                     <Badge variant={method.active ? 'success' : 'neutral'}>{method.active ? 'Ativa' : 'Desativada'}</Badge>

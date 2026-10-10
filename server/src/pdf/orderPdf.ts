@@ -46,9 +46,12 @@ export function orderFileName(order: Pick<OrderPdfDetail, 'id' | 'status'>) {
   return `${order.status === 'quote' ? 'orcamento' : 'pedido'}-${formatOrderNumber(order.id)}.pdf`;
 }
 
-export function renderOrderPdf(order: OrderPdfDetail, timeZone: string): Promise<Buffer> {
+/** PIX para pagar o pedido: o QR Code em PNG e o "copia e cola". */
+export type OrderPdfPix = { amount: number; payload: string; png: Buffer };
+
+export function renderOrderPdf(order: OrderPdfDetail, timeZone: string, pix: OrderPdfPix | null = null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const label = documentLabel(order.status);
+    const label = documentLabel(order.status, order.cancelled_from);
     const doc = new PDFDocument({
       size: 'A4',
       margin: MARGIN,
@@ -60,7 +63,7 @@ export function renderOrderPdf(order: OrderPdfDetail, timeZone: string): Promise
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
     try {
-      drawDocument(doc, order, timeZone);
+      drawDocument(doc, order, timeZone, pix);
       doc.end();
     } catch (err) {
       reject(err);
@@ -72,11 +75,12 @@ function contentBottom(doc: Doc) {
   return doc.page.height - MARGIN - FOOTER_SPACE;
 }
 
-function drawDocument(doc: Doc, order: OrderPdfDetail, timeZone: string) {
+function drawDocument(doc: Doc, order: OrderPdfDetail, timeZone: string, pix: OrderPdfPix | null) {
   let y = drawHeader(doc, order, timeZone);
   y = drawParties(doc, order, y + 16);
   y = drawItems(doc, order, y + 18);
   y = drawTotal(doc, order, y + 12);
+  if (pix) y = drawPix(doc, pix, y + 16);
   if (order.delivery_address) y = drawTextBox(doc, 'Endereço de entrega', order.delivery_address, y + 16);
   if (order.notes) drawTextBox(doc, 'Observações', order.notes, y + 16);
   drawFooters(doc, timeZone);
@@ -119,7 +123,7 @@ function drawHeader(doc: Doc, order: OrderPdfDetail, timeZone: string): number {
   if (order.store_phone) doc.text(`Telefone: ${pdfSafe(order.store_phone)}`, textLeft, doc.y + 1, { width: textWidth });
   const storeBottom = hasLogo ? Math.max(doc.y, MARGIN + LOGO_BOX) : doc.y;
 
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(ACCENT).text(documentLabel(order.status), docX, MARGIN, {
+  doc.font('Helvetica-Bold').fontSize(18).fillColor(ACCENT).text(documentLabel(order.status, order.cancelled_from), docX, MARGIN, {
     width: docWidth,
     align: 'right',
   });
@@ -220,7 +224,7 @@ function drawItems(doc: Doc, order: OrderDetail, startY: number): number {
         .font('Helvetica')
         .fontSize(9)
         .fillColor(MUTED)
-        .text(`${documentLabel(order.status)} nº ${formatOrderNumber(order.id)} (continuação)`, MARGIN, MARGIN, {
+        .text(`${documentLabel(order.status, order.cancelled_from)} nº ${formatOrderNumber(order.id)} (continuação)`, MARGIN, MARGIN, {
           width: tableWidth,
         });
       y = drawTableHeader(doc, doc.y + 6);
@@ -289,6 +293,31 @@ function drawTotal(doc: Doc, order: OrderDetail, startY: number): number {
     .fillColor(INK)
     .text(formatMoney(order.total_amount), x + 70, y + 13, { width: boxWidth - 84, align: 'right' });
   return y + boxHeight;
+}
+
+/** Quadro do PIX: QR Code para o app do banco e o código "copia e cola". */
+function drawPix(doc: Doc, pix: OrderPdfPix, startY: number): number {
+  const width = doc.page.width - MARGIN * 2;
+  const qr = 104;
+  const pad = 10;
+  let y = startY;
+  if (y + qr + pad * 2 > contentBottom(doc)) {
+    doc.addPage();
+    y = MARGIN;
+  }
+  const height = qr + pad * 2;
+  doc.roundedRect(MARGIN, y, width, height, 4).lineWidth(1).strokeColor(RULE).stroke();
+  doc.image(pix.png, MARGIN + pad, y + pad, { width: qr, height: qr });
+  const textX = MARGIN + pad * 2 + qr;
+  const textWidth = width - qr - pad * 3;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(INK).text(`Pague com PIX: ${formatMoney(pix.amount)}`, textX, y + pad + 2, {
+    width: textWidth,
+  });
+  doc.font('Helvetica').fontSize(9).fillColor(MUTED).text('Aponte a câmera do app do banco para o QR Code ou use o PIX copia e cola:', textX, doc.y + 4, {
+    width: textWidth,
+  });
+  doc.font('Courier').fontSize(7.5).fillColor(INK).text(pix.payload, textX, doc.y + 4, { width: textWidth });
+  return y + height;
 }
 
 /** Quadro de texto livre (endereço de entrega, observações). Devolve onde ele termina. */

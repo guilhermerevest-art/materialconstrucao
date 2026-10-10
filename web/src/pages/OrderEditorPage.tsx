@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { ClientSitesDialog, siteDeliveryAddress, useClientSites } from '@/components/ClientSitesDialog';
 import { CartTable, type CartItem } from '@/components/pdv/CartTable';
 import { ClientPicker, type ClientPickerHandle } from '@/components/pdv/ClientPicker';
 import { ProductSearch, type ProductSearchHandle } from '@/components/pdv/ProductSearch';
@@ -58,6 +59,8 @@ export function OrderEditorPage() {
   const [notes, setNotes] = useState('');
   const [paymentMethodId, setPaymentMethodId] = useState<number | null>(null);
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [clientSiteId, setClientSiteId] = useState<number | null>(null);
+  const [sitesOpen, setSitesOpen] = useState(false);
   const [discountType, setDiscountType] = useState<DiscountType>('percent');
   const [discountText, setDiscountText] = useState('');
   const [storeId, setStoreId] = useState<number | null>(user.store_id);
@@ -107,10 +110,15 @@ export function OrderEditorPage() {
     setNotes(order.notes ?? '');
     setPaymentMethodId(order.payment_method_id);
     setDeliveryAddress(order.delivery_address ?? '');
+    setClientSiteId(order.client_site_id);
     setDiscountType(order.discount_type ?? 'percent');
     setDiscountText(order.discount_value ? decimalToInput(order.discount_value) : '');
     setStoreId(order.store_id);
   }, [existing.data]);
+
+  const sites = useClientSites(client?.id);
+  // Obras encerradas saem da lista, menos a que o orçamento já tinha.
+  const siteOptions = sites.data?.filter((site) => site.active || site.id === clientSiteId) ?? [];
 
   // Admin sem loja padrão começa na primeira loja da lista.
   useEffect(() => {
@@ -144,6 +152,7 @@ export function OrderEditorPage() {
         notes,
         payment_method_id: paymentMethodId,
         delivery_address: deliveryAddress,
+        client_site_id: clientSiteId,
         discount_type: discountValue ? discountType : null,
         discount_value: discountValue,
         store_id: isAdmin ? storeId : undefined,
@@ -182,6 +191,8 @@ export function OrderEditorPage() {
   }
 
   function selectClient(next: Client) {
+    // A obra é do cliente: trocar de cliente tira a obra (o endereço digitado fica).
+    if (next.id !== client?.id) setClientSiteId(null);
     setClient(next);
     setErrors((e) => ({ ...e, client: undefined }));
     changed();
@@ -315,7 +326,7 @@ export function OrderEditorPage() {
               )}
             </CardHeader>
             <CardContent>
-              <ProductSearch ref={productSearch} onAdd={addProduct} invalid={Boolean(errors.items)} />
+              <ProductSearch ref={productSearch} onAdd={addProduct} invalid={Boolean(errors.items)} storeId={storeId} />
               {errors.items && <p className="mt-2 text-[13px] text-destructive">{errors.items}</p>}
             </CardContent>
             <CartTable
@@ -441,12 +452,40 @@ export function OrderEditorPage() {
                 </div>
               </Field>
 
+              {client && (
+                <Field label="Obra" htmlFor="obra" hint="Escolher a obra preenche o endereço de entrega.">
+                  <div className="flex gap-2">
+                    <NativeSelect
+                      id="obra"
+                      className="flex-1"
+                      value={clientSiteId ?? ''}
+                      onChange={(e) => {
+                        const site = siteOptions.find((s) => s.id === Number(e.target.value));
+                        setClientSiteId(site ? site.id : null);
+                        if (site) setDeliveryAddress(siteDeliveryAddress(site));
+                        changed();
+                      }}
+                    >
+                      <option value="">{siteOptions.length ? 'Nenhuma (digitar o endereço)' : 'Nenhuma obra cadastrada'}</option>
+                      {siteOptions.map((site) => (
+                        <option key={site.id} value={site.id}>
+                          {site.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <Button type="button" variant="outline" size="icon" className="size-10" onClick={() => setSitesOpen(true)} aria-label="Nova obra">
+                      <Plus />
+                    </Button>
+                  </div>
+                </Field>
+              )}
+
               <Field label="Endereço de entrega" htmlFor="entrega" hint="Deixe em branco se o cliente retira na loja.">
                 <Textarea
                   id="entrega"
                   value={deliveryAddress}
                   maxLength={300}
-                  rows={2}
+                  rows={3}
                   onChange={(e) => {
                     setDeliveryAddress(e.target.value);
                     changed();
@@ -493,6 +532,20 @@ export function OrderEditorPage() {
         </aside>
       </div>
 
+      {client && (
+        <ClientSitesDialog
+          client={client}
+          open={sitesOpen}
+          onOpenChange={setSitesOpen}
+          startNew
+          onCreated={(site) => {
+            setClientSiteId(site.id);
+            setDeliveryAddress(siteDeliveryAddress(site));
+            changed();
+            setSitesOpen(false);
+          }}
+        />
+      )}
       <ConfirmDialog
         open={blocker.state === 'blocked'}
         onOpenChange={(open) => !open && blocker.state === 'blocked' && blocker.reset()}

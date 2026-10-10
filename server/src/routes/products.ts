@@ -4,7 +4,7 @@ import { currentUser, requireAdmin } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
-import { likePattern, optionalQuery, optionalText, pagination, parseId } from '../lib/validation.js';
+import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { productFiscalSchema, type ProductFiscalInput } from '../fiscal/validation.js';
 
 const productSchema = z.object({
@@ -25,6 +25,8 @@ const productSchema = z.object({
 const listSchema = z.object({
   q: optionalQuery,
   status: z.enum(['active', 'inactive', 'all']).default('active'),
+  // Com a loja, cada produto vem com o saldo de estoque dela (o PDV mostra na busca).
+  stock_store_id: optionalQueryId,
   ...pagination,
 });
 
@@ -87,7 +89,11 @@ export function productsRouter(ctx: AppContext) {
     const status = user.role === 'admin' ? query.status : 'active';
     const { q, page, page_size } = query;
     const { rows } = await queryAs(ctx.pool, user,
-      `select ${PRODUCT_COLUMNS}, count(*) over () as total_count
+      `select ${PRODUCT_COLUMNS}, track_stock,
+              case when $6::bigint is not null and track_stock then
+                coalesce((select b.quantity from stock_balances b where b.store_id = $6 and b.product_id = products.id), 0)
+              end as stock,
+              count(*) over () as total_count
          from products
         where ($1::text is null
                or lower(code) = lower($1)
@@ -96,7 +102,7 @@ export function productsRouter(ctx: AppContext) {
           and ($3::text = 'all' or active = ($3::text = 'active'))
         order by (lower(code) = lower($1)) desc nulls last, name, id
         limit $4 offset $5`,
-      [q ?? null, q ? likePattern(q) : null, status, page_size, (page - 1) * page_size],
+      [q ?? null, q ? likePattern(q) : null, status, page_size, (page - 1) * page_size, query.stock_store_id ?? null],
     );
     res.json({
       items: rows.map(({ total_count: _, ...row }) => toProduct(row)),

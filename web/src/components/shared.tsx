@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { centsToMoney, documentLabel } from '@/lib/format';
-import type { OrderStatus } from '@/lib/types';
+import type { CancelledFrom, OrderStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Badge } from './ui/misc';
@@ -32,7 +32,8 @@ export function WhatsAppIcon({ className }: { className?: string }) {
   );
 }
 
-export function StatusBadge({ status }: { status: OrderStatus }) {
+export function StatusBadge({ status, cancelledFrom = null }: { status: OrderStatus; cancelledFrom?: CancelledFrom }) {
+  if (status === 'cancelled') return <Badge variant="danger">{cancelledFrom === 'quote' ? 'Perdido' : 'Cancelado'}</Badge>;
   return <Badge variant={status}>{documentLabel(status)}</Badge>;
 }
 

@@ -128,7 +128,9 @@ export function clientsRouter(ctx: AppContext) {
     const { q, page, page_size } = listSchema.parse(req.query);
     const digits = q?.replace(/\D/g, '') ?? '';
     const { rows } = await queryAs(ctx.pool, me,
-      `select ${CLIENT_COLUMNS}, count(*) over () as total_count
+      `select ${CLIENT_COLUMNS}, credit_limit,
+              (select count(*) from client_sites cs where cs.client_id = clients.id and cs.active) as sites_count,
+              count(*) over () as total_count
          from clients
         where $1::text is null
            or search_norm(name) like search_norm($1)
@@ -149,7 +151,7 @@ export function clientsRouter(ctx: AppContext) {
   router.get('/:id', async (req, res) => {
     const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rows } = await queryAs(ctx.pool, me, `select ${CLIENT_COLUMNS} from clients where id = $1`, [id]);
+    const { rows } = await queryAs(ctx.pool, me, `select ${CLIENT_COLUMNS}, credit_limit from clients where id = $1`, [id]);
     if (!rows[0]) throw new HttpError(404, NOT_FOUND);
     res.json({ client: toClient(rows[0]) });
   });

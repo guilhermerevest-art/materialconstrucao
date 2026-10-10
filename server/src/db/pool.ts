@@ -4,6 +4,9 @@ import pg from 'pg';
 // Os ids cabem com folga em Number e os valores têm no máximo 3 casas decimais.
 pg.types.setTypeParser(pg.types.builtins.INT8, (value) => Number(value));
 pg.types.setTypeParser(pg.types.builtins.NUMERIC, (value) => Number(value));
+// date (dia da entrega, do romaneio) fica como "2026-10-20": virar Date levaria o fuso
+// do servidor junto e o dia poderia aparecer trocado na tela.
+pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
 
 export type Db = pg.Pool | pg.PoolClient;
 

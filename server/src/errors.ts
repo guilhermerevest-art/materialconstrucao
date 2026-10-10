@@ -25,6 +25,8 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   fiscal_documents_number_key:
     'Este número de nota já foi usado. Ajuste o próximo número em Configurações → Fiscal e tente de novo.',
   fiscal_documents_order_open_key: 'Este pedido já tem uma nota fiscal em andamento.',
+  sectors_tenant_name_key: 'Já existe um setor com esse nome.',
+  workflows_scope_key: 'Este fluxo acabou de ser criado por outra pessoa. Atualize a página.',
 };
 
 const IN_USE_MESSAGES: Record<string, string> = {
@@ -36,6 +38,8 @@ const IN_USE_MESSAGES: Record<string, string> = {
   orders_payment_method_id_fkey:
     'Esta forma de pagamento aparece em pedidos e não pode ser excluída. Desative-a para tirá-la da lista.',
   fiscal_documents_order_id_fkey: 'Este pedido tem nota fiscal emitida e não pode ser excluído.',
+  workflow_stages_sector_id_fkey: 'Este setor é usado em etapas do fluxo. Tire-o das etapas antes de excluir.',
+  orders_stage_id_fkey: 'Há pedidos nesta etapa. Avance ou devolva esses pedidos antes de removê-la.',
 };
 
 const CHECK_MESSAGES: Record<string, string> = {

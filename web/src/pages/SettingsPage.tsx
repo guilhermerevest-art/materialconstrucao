@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Landmark, MessageCircleReply, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { FiscalSettingsForm } from '@/components/fiscal/FiscalSettingsForm';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
+import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
+import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,16 +28,25 @@ export function SettingsPage() {
   useDocumentTitle('Configurações');
   const [searchParams, setSearchParams] = useSearchParams();
   // A aba vai na URL: as mensagens de "configure em Configurações → Fiscal" levam direto para ela.
-  const tab = searchParams.get('aba') === 'fiscal' ? 'fiscal' : 'whatsapp';
+  const requested = searchParams.get('aba');
+  const tab = requested === 'fiscal' || requested === 'financeiro' || requested === 'retomada' ? requested : 'whatsapp';
 
   return (
     <div className="max-w-4xl">
       <PageHeader title="Configurações" />
-      <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'fiscal' ? { aba: 'fiscal' } : {}, { replace: true })}>
+      <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'whatsapp' ? {} : { aba: value }, { replace: true })}>
         <TabsList className="mb-2">
           <TabsTrigger value="whatsapp">
             <WhatsAppIcon className="size-4" />
             WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="retomada">
+            <MessageCircleReply />
+            Retomada
+          </TabsTrigger>
+          <TabsTrigger value="financeiro">
+            <Landmark />
+            Financeiro
           </TabsTrigger>
           <TabsTrigger value="fiscal">
             <Receipt />
@@ -44,6 +55,12 @@ export function SettingsPage() {
         </TabsList>
         <TabsContent value="whatsapp">
           <WhatsAppSettings />
+        </TabsContent>
+        <TabsContent value="retomada" className="max-w-3xl">
+          <FollowupSettingsCard />
+        </TabsContent>
+        <TabsContent value="financeiro" className="max-w-3xl">
+          <FinanceSettingsCard />
         </TabsContent>
         <TabsContent value="fiscal">
           <FiscalSettingsForm />
@@ -217,6 +234,7 @@ function WhatsAppSettings() {
           )}
         </CardContent>
       </Card>
+
     </div>
   );
 }
