@@ -8,6 +8,8 @@ export type User = {
   role: Role;
   store_id: number | null;
   store_name: string | null;
+  /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
+  finance_enabled?: boolean;
 };
 
 export type ManagedUser = User & {
@@ -127,10 +129,17 @@ export type StockEntry = {
   items_count: number;
 };
 
+export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'other';
+
 export type PaymentMethod = {
   id: number;
   name: string;
   active: boolean;
+  kind: PaymentKind;
+  installments: number;
+  /** Dias da venda até a 1ª parcela (0 = no dia). */
+  first_due_days: number;
+  interval_days: number;
   /** Pedidos e orçamentos que usam esta forma. Com algum, ela só pode ser desativada. */
   orders_count: number;
   created_at: string;
@@ -461,3 +470,92 @@ export type DeliveryRoute = {
 };
 
 export type Vehicle = { id: number; name: string; plate: string | null; active: boolean; created_at: string };
+
+export type ReceivableStatus = 'open' | 'paid' | 'cancelled';
+
+export type Receivable = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  order_id: number | null;
+  client_id: number;
+  client_name: string;
+  client_whatsapp: string;
+  installment: number;
+  installments: number;
+  /** "2026-11-09" */
+  due_date: string;
+  amount: number;
+  paid_amount: number;
+  remaining: number;
+  status: ReceivableStatus;
+  payment_method_id: number | null;
+  payment_method_name: string | null;
+  kind: PaymentKind;
+  overdue: boolean;
+  created_at: string;
+  paid_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+};
+
+export type ReceivablePayment = {
+  id: number;
+  receivable_id: number;
+  method_name: string;
+  amount: number;
+  received_at: string;
+  reversed_at: string | null;
+  reverse_reason: string | null;
+  user_name?: string;
+  session_open?: boolean;
+  order_id?: number | null;
+  installment?: number;
+  installments?: number;
+  client_name?: string;
+  kind?: PaymentKind;
+};
+
+export type CashSession = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  user_id: number;
+  user_name: string;
+  opened_at: string;
+  opening_amount: number;
+  closed_at: string | null;
+  counted_amount: number | null;
+  closing_notes: string | null;
+};
+
+export type CashSummary = {
+  methods: { method_name: string; kind: PaymentKind; amount: number; count: number }[];
+  received: number;
+  withdrawals: number;
+  deposits: number;
+  expected_cash: number;
+  difference: number | null;
+};
+
+export type CashView = {
+  session: CashSession;
+  summary: CashSummary;
+  payments: ReceivablePayment[];
+  movements: { id: number; kind: 'withdrawal' | 'deposit'; amount: number; reason: string; created_at: string; user_name: string }[];
+};
+
+export type ClientCredit = {
+  credit_limit: number | null;
+  open_balance: number;
+  overdue_amount: number;
+  oldest_overdue: string | null;
+  available: number | null;
+};
+
+export type FinanceSettings = {
+  finance_enabled: boolean;
+  pix_key: string | null;
+  pix_merchant_name: string | null;
+  pix_city: string | null;
+};

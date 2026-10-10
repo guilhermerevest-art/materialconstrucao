@@ -18,7 +18,7 @@ import {
 } from './ui/dropdown-menu';
 
 type NavItem = { to: string; label: string; end?: boolean };
-type NavGroup = { label: string; items: NavItem[]; adminOnly?: boolean };
+type NavGroup = { label: string; items: NavItem[]; adminOnly?: boolean; finance?: boolean };
 
 // O que se usa o dia inteiro fica direto na barra; o resto, agrupado por área,
 // para a barra caber em telas de 1280 px mesmo com o menu do administrador.
@@ -33,6 +33,14 @@ const NAV: (NavItem | NavGroup)[] = [
       { to: '/monitor', label: 'Monitor' },
       { to: '/entregas', label: 'Entregas' },
       { to: '/estoque', label: 'Estoque' },
+    ],
+  },
+  {
+    label: 'Financeiro',
+    finance: true,
+    items: [
+      { to: '/caixa', label: 'Caixa' },
+      { to: '/contas-a-receber', label: 'Contas a receber' },
     ],
   },
   { to: '/relatorios', label: 'Relatórios' },
@@ -83,7 +91,8 @@ export function AppLayout() {
   const logout = useLogout();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const nav = NAV.filter((entry) => !isGroup(entry) || !entry.adminOnly || isAdmin);
+  // Financeiro só aparece quando está ligado na lojamestre.
+  const nav = NAV.filter((entry) => !isGroup(entry) || ((!entry.adminOnly || isAdmin) && (!entry.finance || user.finance_enabled)));
   const groupActive = (group: NavGroup) => group.items.some((item) => location.pathname.startsWith(item.to));
 
   async function handleLogout() {
@@ -128,13 +137,13 @@ export function AppLayout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <Button asChild size="sm" className="hidden sm:inline-flex">
+            <Button asChild size="sm" className="hidden sm:inline-flex lg:hidden xl:inline-flex">
               <Link to="/pedidos/novo">
                 <Plus />
                 Novo pedido
               </Link>
             </Button>
-            <Button asChild size="icon" className="sm:hidden" aria-label="Novo pedido">
+            <Button asChild size="icon" className="sm:hidden lg:inline-flex xl:hidden" aria-label="Novo pedido">
               <Link to="/pedidos/novo">
                 <Plus />
               </Link>

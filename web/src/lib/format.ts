@@ -49,6 +49,8 @@ export function parseDecimal(text: string): number | null {
 
 /** Número para o campo de texto: 2.5 -> "2,5". */
 export const decimalToInput = (value: number) => String(value).replace('.', ',');
+/** Valor em reais para o campo de texto: 116.7 -> "116,70". */
+export const moneyToInput = (value: number) => value.toFixed(2).replace('.', ',');
 
 /**
  * Subtotal em centavos com o mesmo arredondamento do banco

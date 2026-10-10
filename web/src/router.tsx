@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { AppLayout } from './components/AppLayout';
 import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
+import { CashPage } from './pages/CashPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { ConferencePage } from './pages/ConferencePage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -15,6 +16,7 @@ import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ReceivablesPage } from './pages/ReceivablesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StockEntryPage } from './pages/StockEntryPage';
@@ -100,6 +102,8 @@ export const router = createBrowserRouter([
       { path: 'estoque', element: <StockPage /> },
       { path: 'entregas', element: <DeliveriesPage /> },
       { path: 'entregas/:id', element: <DeliveryProofPage /> },
+      { path: 'caixa', element: <CashPage /> },
+      { path: 'contas-a-receber', element: <ReceivablesPage /> },
       {
         element: <RequireAdmin />,
         children: [

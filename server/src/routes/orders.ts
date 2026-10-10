@@ -16,7 +16,9 @@ import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js'
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
-import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+import { orderFileName, renderOrderPdf, type OrderPdfPix } from '../pdf/orderPdf.js';
+import { loadFinanceSettings, orderOpenAmount } from '../finance/queries.js';
+import { pixPayload, pixQrPng } from '../finance/pix.js';
 import { completeRemaining } from '../deliveries/queries.js';
 import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
 import { assertClientSite } from './clientSites.js';
@@ -106,6 +108,22 @@ async function loadOrderView(db: pg.PoolClient, id: number, user: AuthUser) {
   const order = await loadOrderDetail(db, id);
   if (!order) return null;
   return { ...order, workflow: await loadOrderWorkflow(db, id, user) };
+}
+
+/**
+ * PIX do PDF: só para pedido (não orçamento) com a forma PIX e a chave da loja
+ * configurada. O valor é o que falta receber.
+ */
+async function orderPix(db: pg.PoolClient, order: OrderDetail): Promise<OrderPdfPix | null> {
+  if (order.status !== 'order' || !order.payment_method_id) return null;
+  const { rows } = await db.query<{ kind: string }>('select kind from payment_methods where id = $1', [order.payment_method_id]);
+  if (rows[0]?.kind !== 'pix') return null;
+  const { pix } = await loadFinanceSettings(db);
+  if (!pix) return null;
+  const amount = await orderOpenAmount(db, order.id, order.total_amount);
+  if (amount <= 0) return null;
+  const payload = pixPayload({ ...pix, amount, txid: `PED${formatOrderNumber(order.id)}` });
+  return { amount, payload, png: await pixQrPng(payload) };
 }
 
 /** WhatsApp do cliente pronto para a EvolutionAPI. Só números antigos ou importados precisam de ajuste. */
@@ -276,7 +294,7 @@ export function ordersRouter(ctx: AppContext) {
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
-      if (body.status === 'order') await onOrderConfirmed(db, id, user);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });
     res.status(201).json({ order });
@@ -335,7 +353,7 @@ export function ordersRouter(ctx: AppContext) {
         ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
-      if (body.status === 'order') await onOrderConfirmed(db, id, user);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });
     res.json({ order });
@@ -358,7 +376,7 @@ export function ordersRouter(ctx: AppContext) {
           rows[0].status === 'cancelled' ? 'Orçamento perdido não pode ser convertido. Reabra-o antes.' : 'Este documento já é um pedido.',
         );
       }
-      await onOrderConfirmed(db, id, user);
+      await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });
     res.json({ order });
@@ -419,9 +437,12 @@ export function ordersRouter(ctx: AppContext) {
 
   router.get('/:id/pdf', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    const { order, pix } = await withSession(pool, currentUser(req), async (db) => {
+      const order = await loadOrderDetail(db, id);
+      return { order, pix: order ? await orderPix(db, order) : null };
+    });
     if (!order) throw new HttpError(404, NOT_FOUND);
-    const pdf = await renderOrderPdf(order, config.timeZone);
+    const pdf = await renderOrderPdf(order, config.timeZone, pix);
     const disposition = req.query.download === '1' ? 'attachment' : 'inline';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${orderFileName(order)}"`);
@@ -432,7 +453,10 @@ export function ordersRouter(ctx: AppContext) {
   router.post('/:id/whatsapp', async (req, res) => {
     const user = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
+    const { order, pix } = await withSession(pool, user, async (db) => {
+      const order = await loadOrderDetail(db, id);
+      return { order, pix: order ? await orderPix(db, order) : null };
+    });
     if (!order) throw new HttpError(404, NOT_FOUND);
     if (order.status === 'cancelled') throw new HttpError(409, 'Documento cancelado não é enviado ao cliente.');
 
@@ -453,7 +477,7 @@ export function ordersRouter(ctx: AppContext) {
       );
     }
 
-    const pdf = await renderOrderPdf(order, config.timeZone);
+    const pdf = await renderOrderPdf(order, config.timeZone, pix);
     try {
       await sendPdfDocument(
         settings,

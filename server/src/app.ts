@@ -13,6 +13,7 @@ import { clientSitesRouter } from './routes/clientSites.js';
 import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { deliveriesRouter } from './routes/deliveries.js';
+import { financeRouter } from './routes/finance.js';
 import { monitorRouter } from './routes/monitor.js';
 import { ordersRouter } from './routes/orders.js';
 import { paymentMethodsRouter } from './routes/paymentMethods.js';
@@ -68,6 +69,7 @@ export function createApp(ctx: AppContext) {
   api.use('/stock', stockRouter(ctx));
   api.use(deliveriesRouter(ctx));
   api.use(separationRouter(ctx));
+  api.use(financeRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));

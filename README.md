@@ -211,6 +211,31 @@ Botão **Separação** no pedido confirmado (e **Separar** em cada entrega agend
   é registrada assim mesmo, com a observação.
 - O código lido é o **código do produto** no cadastro.
 
+## Financeiro (opcional)
+
+Desligado por padrão: a venda funciona como sempre. O admin liga em **Administração → Configurações →
+Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
+
+- **Forma de pagamento com condição:** cada forma tem um tipo (dinheiro, PIX, cartão, boleto, crediário,
+  outro) e a condição: número de parcelas, dias até o 1º vencimento e entre parcelas. "Crediário 3x" =
+  crediário, 3 parcelas, 30 dias, 30 dias. As formas que já existiam recebem o tipo pelo nome.
+- **Contas a receber:** pedido confirmado com o financeiro ligado gera as parcelas da forma escolhida (o centavo
+  da divisão fica na 1ª), que aparecem no quadro **Pagamento** do pedido. Pedido sem forma gera uma parcela à
+  vista; pedidos confirmados antes de ligar o financeiro não geram parcelas. Cancelar o pedido cancela as parcelas; com
+  algo já recebido, o cancelamento é bloqueado até estornar o recebimento.
+- **Crediário:** só para cliente com limite (em Clientes → Crédito). O pedido é recusado se o cliente tem parcela
+  vencida ou se passa do limite somando o que ele já deve em todas as lojas.
+- **Caixa:** cada operador abre o seu caixa (com o troco inicial) e recebe as parcelas por ele: busca o cliente
+  ou o pedido, recebe parcial ou total, em qualquer forma (crediário é como se vende, não como se paga), com o
+  troco calculado no dinheiro. **Sangria** e **suprimento** com motivo. No fechamento, o operador informa o
+  dinheiro contado e o sistema mostra a diferença para o esperado (troco + dinheiro recebido + suprimentos −
+  sangrias). Estorno de recebimento só com o caixa ainda aberto, pelo operador ou pelo admin.
+- **PIX:** com a chave PIX da loja configurada, o recebimento em PIX mostra o QR Code com o valor (e o "copia e
+  cola"), e o PDF do pedido confirmado na forma PIX sai com o QR Code do que falta pagar. É o PIX estático do
+  Banco Central: a confirmação é feita olhando o extrato. Baixa automática precisa de integração com o banco
+  (PSP) e não faz parte desta versão.
+- O vendedor vê as parcelas e caixas da própria loja; o admin, de todas.
+
 ## Fluxo de pedidos e monitores
 
 Depois de confirmado, o pedido pode percorrer etapas (ex.: Aguardando faturamento → Em separação →

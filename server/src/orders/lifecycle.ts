@@ -2,6 +2,7 @@ import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { cancelOrderDeliveries } from '../deliveries/queries.js';
+import { assertStoreCredit, cancelOrderReceivables, createOrderReceivables, loadFinanceSettings } from '../finance/queries.js';
 import { applyOrderStock, returnOrderStock } from '../stock/queries.js';
 import { enterWorkflow } from '../workflow/queries.js';
 
@@ -9,11 +10,15 @@ import { enterWorkflow } from '../workflow/queries.js';
  * Tudo o que acontece quando um orçamento vira pedido (criado como pedido,
  * convertido ou salvo como pedido). Roda na mesma transação que confirma.
  */
-export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user: SessionUser) {
+export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user: SessionUser, timeZone: string) {
+  // Financeiro desligado (padrão): nada de parcela nem trava de crediário, como no MVP.
+  const finance = await loadFinanceSettings(db);
+  if (finance.enabled) await assertStoreCredit(db, orderId, timeZone);
   await enterWorkflow(db, orderId, user.id);
   await applyOrderStock(db, orderId, user);
   // Daqui em diante o pedido tem saldo a entregar (retiradas e entregas parciais).
   await db.query('update orders set delivery_tracking = true where id = $1', [orderId]);
+  if (finance.enabled) await createOrderReceivables(db, orderId, timeZone);
 }
 
 type CancellableOrder = {
@@ -62,7 +67,10 @@ export async function cancelOrder(db: pg.PoolClient, orderId: number, user: Sess
     await assertNoActiveInvoice(db, orderId);
   }
 
-  if (order.status === 'order') await cancelOrderDeliveries(db, orderId, user, `Pedido cancelado: ${reason}`);
+  if (order.status === 'order') {
+    await cancelOrderReceivables(db, orderId, `Pedido cancelado: ${reason}`);
+    await cancelOrderDeliveries(db, orderId, user, `Pedido cancelado: ${reason}`);
+  }
   if (order.stock_applied) await returnOrderStock(db, orderId, user, `Pedido cancelado: ${reason}`);
   await db.query(
     `update orders

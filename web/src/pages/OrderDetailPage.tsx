@@ -17,6 +17,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { CancelOrderDialog } from '@/components/CancelOrderDialog';
 import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
+import { OrderPaymentsCard } from '@/components/OrderPaymentsCard';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -285,6 +286,8 @@ export function OrderDetailPage() {
             }
           />
           <PriceTag cents={Math.round(order.total_amount * 100)} />
+
+          {order.status !== 'quote' && user.finance_enabled && <OrderPaymentsCard order={order} />}
 
           {order.workflow && <OrderProgressCard order={order} workflow={order.workflow} />}
 

@@ -34,6 +34,8 @@ export type AuthUser = SessionUser & {
   token_version: number;
   /** Lojamestre desativada pelo super admin derruba a sessão de todos os usuários dela. */
   tenant_active: boolean;
+  /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
+  finance_enabled: boolean;
 };
 
 export type SuperAdmin = {
@@ -52,10 +54,12 @@ export async function loadAuthUser(pool: pg.Pool, id: number, tenantId: number):
     await setTenantContext(db, tenantId);
     const { rows } = await db.query<AuthUser>(
       `select u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id,
-              u.active, u.token_version, s.name as store_name, t.active as tenant_active
+              u.active, u.token_version, s.name as store_name, t.active as tenant_active,
+              coalesce(st.finance_enabled, false) as finance_enabled
          from users u
          join tenants t on t.id = u.tenant_id
          left join stores s on s.id = u.store_id
+         left join settings st on st.tenant_id = u.tenant_id
         where u.id = $1`,
       [id],
     );
@@ -72,8 +76,8 @@ export async function loadSuperAdmin(db: Db, id: number): Promise<SuperAdmin | n
 }
 
 export function toPublicUser(user: AuthUser) {
-  const { id, name, username, email, role, store_id, store_name, tenant_id } = user;
-  return { id, tenant_id, name, username, email, role, store_id, store_name };
+  const { id, name, username, email, role, store_id, store_name, tenant_id, finance_enabled } = user;
+  return { id, tenant_id, name, username, email, role, store_id, store_name, finance_enabled };
 }
 
 export function toPublicSuperAdmin(sa: SuperAdmin) {
