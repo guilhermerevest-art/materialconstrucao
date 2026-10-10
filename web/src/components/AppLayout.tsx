@@ -52,6 +52,7 @@ const NAV: (NavItem | NavGroup)[] = [
       { to: '/lojas', label: 'Lojas' },
       { to: '/vendedores', label: 'Vendedores' },
       { to: '/formas-de-pagamento', label: 'Formas de pagamento' },
+      { to: '/tabelas-de-preco', label: 'Tabelas de preço' },
       { to: '/fluxo-de-pedidos', label: 'Fluxo de pedidos' },
       { to: '/configuracoes', label: 'Configurações' },
     ],

@@ -7,7 +7,7 @@ import type { Paginated, Product } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Input } from './ui/input';
 
-export type PickedProduct = Pick<Product, 'id' | 'code' | 'name' | 'unit'>;
+export type PickedProduct = Pick<Product, 'id' | 'code' | 'name' | 'unit'> & { price?: number };
 
 /** Escolha de um produto do catálogo pelo nome ou código, com teclado ou mouse. */
 export function ProductPicker({

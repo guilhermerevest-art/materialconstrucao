@@ -17,6 +17,7 @@ import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
+import { PriceListsPage } from './pages/PriceListsPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { ReceivablesPage } from './pages/ReceivablesPage';
 import { ReportsPage } from './pages/ReportsPage';
@@ -114,6 +115,7 @@ export const router = createBrowserRouter([
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
+          { path: 'tabelas-de-preco', element: <PriceListsPage /> },
           { path: 'fluxo-de-pedidos', element: <WorkflowsPage /> },
           { path: 'estoque/entrada', element: <StockEntryPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },

@@ -7,6 +7,7 @@ import { queryAs, withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { applyStockChanges, type StockChange } from '../stock/queries.js';
+import { setPriceReason } from './pricing.js';
 
 const quantity = z
   .number('Informe a quantidade.')
@@ -82,6 +83,14 @@ const entrySchema = z.object({
         // Para reconhecer o item na próxima nota do mesmo fornecedor.
         supplier_code: optionalText(60),
         factor: z.number().positive().max(100_000).default(1),
+        // Novo preço de venda do produto (o sugerido pela margem ou digitado). Nulo mantém.
+        new_price: z
+          .number()
+          .min(0, 'O preço não pode ser negativo.')
+          .max(9_999_999_999)
+          .transform((v) => Math.round(v * 100) / 100)
+          .nullable()
+          .default(null),
       }),
     )
     .min(1, 'A entrada precisa de pelo menos um item.')
@@ -402,10 +411,15 @@ export function stockRouter(ctx: AppContext) {
         }
         result.push(match);
       }
-      // Nome, código e unidade para a tela mostrar o produto já escolhido.
+      // Nome, código e unidade para a tela mostrar o produto já escolhido; preço, custo e
+      // margem para sugerir o novo preço de venda.
       const ids = [...new Set(result.flatMap((m) => (m ? [m.product_id] : [])))];
       const { rows: products } = await db.query<{ id: number; code: string | null; name: string; unit: string }>(
-        'select id, code, name, unit from products where id = any($1::bigint[])',
+        `select p.id, p.code, p.name, p.unit, p.price, p.cost_price,
+                coalesce(p.markup_percent, st.default_markup_percent) as markup_percent
+           from products p
+           left join settings st on st.tenant_id = p.tenant_id
+          where p.id = any($1::bigint[])`,
         [ids],
       );
       const byId = new Map(products.map((p) => [p.id, p]));
@@ -473,6 +487,17 @@ export function stockRouter(ctx: AppContext) {
              from unnest($1::bigint[], $2::numeric[]) as c(id, cost)
             where p.id = c.id`,
           [costs.map((i) => i.product_id), costs.map((i) => Math.round(i.unit_cost! * 10_000) / 10_000)],
+        );
+      }
+      // Preço de venda atualizado na entrada (fica no histórico de preço com a nota).
+      const prices = body.items.filter((i) => i.new_price !== null);
+      if (prices.length) {
+        await setPriceReason(db, body.invoice_number ? `Entrada da NF ${body.invoice_number}` : `Entrada de estoque nº ${entryId}`);
+        await db.query(
+          `update products p set price = c.price
+             from unnest($1::bigint[], $2::numeric[]) as c(id, price)
+            where p.id = c.id`,
+          [prices.map((i) => i.product_id), prices.map((i) => i.new_price)],
         );
       }
       const mappings = body.supplier_document ? body.items.filter((i) => i.supplier_code) : [];

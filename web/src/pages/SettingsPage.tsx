@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Landmark, MessageCircleReply, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
+import { BadgePercent, CheckCircle2, Landmark, MessageCircleReply, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { FiscalSettingsForm } from '@/components/fiscal/FiscalSettingsForm';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
 import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
 import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
+import { SalesSettingsCard } from '@/components/SalesSettingsCard';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +30,7 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // A aba vai na URL: as mensagens de "configure em Configurações → Fiscal" levam direto para ela.
   const requested = searchParams.get('aba');
-  const tab = requested === 'fiscal' || requested === 'financeiro' || requested === 'retomada' ? requested : 'whatsapp';
+  const tab = requested === 'fiscal' || requested === 'financeiro' || requested === 'retomada' || requested === 'vendas' ? requested : 'whatsapp';
 
   return (
     <div className="max-w-4xl">
@@ -39,6 +40,10 @@ export function SettingsPage() {
           <TabsTrigger value="whatsapp">
             <WhatsAppIcon className="size-4" />
             WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="vendas">
+            <BadgePercent />
+            Vendas
           </TabsTrigger>
           <TabsTrigger value="retomada">
             <MessageCircleReply />
@@ -55,6 +60,9 @@ export function SettingsPage() {
         </TabsList>
         <TabsContent value="whatsapp">
           <WhatsAppSettings />
+        </TabsContent>
+        <TabsContent value="vendas" className="max-w-3xl">
+          <SalesSettingsCard />
         </TabsContent>
         <TabsContent value="retomada" className="max-w-3xl">
           <FollowupSettingsCard />

@@ -310,6 +310,20 @@ export function OrderDetailPage() {
                   {order.payment_method_name ?? 'Não informada'}
                 </p>
               </div>
+              {(order.price_list_name || order.discount_approved_by_name) && (
+                <div className="grid gap-0.5 text-[13px] text-muted-foreground">
+                  {order.price_list_name && (
+                    <p>
+                      Tabela de preço: <span className="font-medium text-foreground">{order.price_list_name}</span>
+                    </p>
+                  )}
+                  {order.discount_approved_by_name && (
+                    <p>
+                      Desconto liberado por <span className="font-medium text-foreground">{order.discount_approved_by_name}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               <Button
                 variant="whatsapp"

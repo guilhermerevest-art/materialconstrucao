@@ -14,6 +14,13 @@ export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user:
   // Financeiro desligado (padrão): nada de parcela nem trava de crediário, como no MVP.
   const finance = await loadFinanceSettings(db);
   if (finance.enabled) await assertStoreCredit(db, orderId, timeZone);
+  // Custo de cada item na hora da venda, para margem e lucro nos relatórios.
+  await db.query(
+    `update order_items oi set unit_cost = p.cost_price
+       from products p
+      where oi.order_id = $1 and p.id = oi.product_id`,
+    [orderId],
+  );
   await enterWorkflow(db, orderId, user.id);
   await applyOrderStock(db, orderId, user);
   // Daqui em diante o pedido tem saldo a entregar (retiradas e entregas parciais).

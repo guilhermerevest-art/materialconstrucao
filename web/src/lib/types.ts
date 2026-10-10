@@ -10,6 +10,8 @@ export type User = {
   store_name: string | null;
   /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
   finance_enabled?: boolean;
+  /** Desconto máximo de quem vende, em %. Nulo = sem limite. */
+  max_discount_percent?: number | null;
 };
 
 export type ManagedUser = User & {
@@ -17,6 +19,10 @@ export type ManagedUser = User & {
   created_at: string;
   /** Setores do fluxo do pedido: só quem é do setor tira o pedido das etapas dele. */
   sector_ids: number[];
+  /** Desconto máximo próprio (nulo = o padrão da loja). */
+  max_discount_percent: number | null;
+  /** Libera, com a própria senha, desconto acima do limite de quem vende. */
+  can_approve_discounts: boolean;
 };
 
 export type Store = {
@@ -62,6 +68,9 @@ export type Client = {
   created_at: string;
   /** Com quem falar (vai no "Olá" das mensagens). Ausente nos avisos de WhatsApp duplicado. */
   contact_name?: string | null;
+  /** Tabela de preço do cliente (o admin escolhe). */
+  price_list_id?: number | null;
+  price_list_name?: string | null;
   /** Ausente nos avisos de WhatsApp duplicado, que só trazem o básico. */
   details?: ClientDetails;
   /** Limite do crediário. Nulo: o cliente não compra no crediário. */
@@ -118,7 +127,13 @@ export type Product = {
   track_stock?: boolean;
   /** Saldo na loja pedida na busca (stock_store_id); nulo se o produto não controla estoque. */
   stock?: number | null;
+  /** Preço na tabela do cliente pedido na busca (client_id); nulo sem tabela. */
+  client_price?: number | null;
+  /** Faixas por quantidade (a partir de min_quantity, sai por price). */
+  tiers?: PriceTier[] | null;
 };
+
+export type PriceTier = { min_quantity: number; price: number };
 
 export type StockItem = {
   id: number;
@@ -268,6 +283,11 @@ export type Order = {
   cancelled_by_name: string | null;
   cancel_reason: string | null;
   client_name: string;
+  /** Tabela de preço do cliente usada no pedido. */
+  price_list_name?: string | null;
+  /** Desconto acima do limite: quem liberou e até quanto. */
+  discount_approved_by_name?: string | null;
+  discount_approved_percent?: number | null;
   client_whatsapp: string;
   store_name: string;
   store_address: string | null;
@@ -783,3 +803,51 @@ export type FollowupSettings = {
   followup_message: string | null;
   default_message: string;
 };
+
+export type PriceSource = 'catalog' | 'list' | 'tier';
+
+/** Preço que cada item vai ter ao salvar (POST /orders/price-preview). */
+export type PricePreview = {
+  price_list: { id: number; name: string } | null;
+  discount_limit: number | null;
+  items: {
+    product_id: number;
+    unit_price: number;
+    catalog_price: number;
+    source: PriceSource;
+    next_tier: PriceTier | null;
+    /** Item do orçamento que ficou com o preço da época. */
+    kept_previous: boolean;
+  }[];
+};
+
+export type PriceList = {
+  id: number;
+  name: string;
+  adjust_percent: number;
+  active: boolean;
+  created_at: string;
+  clients_count?: number;
+  items_count?: number;
+};
+
+export type PriceListItem = { product_id: number; code: string | null; name: string; unit: string; catalog_price: number; price: number };
+
+export type ProductPricing = {
+  id: number;
+  price: number;
+  cost_price: number | null;
+  markup_percent: number | null;
+  default_markup_percent: number | null;
+  tiers: PriceTier[];
+  history: { old_price: number; new_price: number; reason: string | null; created_at: string; user_name: string | null }[];
+};
+
+export type PriceAdjustResult = {
+  items: { id: number; code: string | null; name: string; unit: string; cost_price: number | null; old_price: number; new_price: number }[];
+  count: number;
+  skipped: number;
+  applied: boolean;
+};
+
+export type SalesSettings = { max_discount_percent: number | null; default_markup_percent: number | null };

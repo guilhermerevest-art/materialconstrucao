@@ -118,7 +118,10 @@ export function ClientsPage() {
               <TBody>
                 {data.items.map((client) => (
                   <TR key={client.id}>
-                    <TD className="pl-4 font-medium">{client.name}</TD>
+                    <TD className="pl-4 font-medium">
+                      {client.name}
+                      {client.price_list_name && <span className="block text-xs font-normal text-success">Tabela {client.price_list_name}</span>}
+                    </TD>
                     <TD className="tabular-nums">{formatWhatsapp(client.whatsapp)}</TD>
                     <TD>
                       <Button variant="ghost" size="sm" onClick={() => setSitesOf(client)} aria-label={`Obras de ${client.name}`}>

@@ -11,10 +11,10 @@ import { Checkbox, Field, Input, NativeSelect } from '@/components/ui/input';
 import { Alert, Badge } from '@/components/ui/misc';
 import { api, ApiError } from '@/lib/api';
 import { useUser } from '@/lib/auth';
-import { decimalToInput, formatDate, formatMoney, formatQuantity, parseDecimal } from '@/lib/format';
+import { decimalToInput, formatDate, formatMoney, formatPercent, formatQuantity, moneyToInput, parseDecimal } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
 import { parseNfeXml, type NfeInvoice, type NfeItem } from '@/lib/nfeXml';
-import type { Store } from '@/lib/types';
+import type { SalesSettings, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 type Row = {
@@ -29,9 +29,22 @@ type Row = {
   cost: string;
   ignore: boolean;
   source: 'supplier' | 'code' | 'name' | null;
+  /** Margem sobre o custo do produto (a dele ou a padrão), para sugerir o preço de venda. */
+  markup: number | null;
+  /** Atualizar o preço de venda nesta entrada, e para quanto. */
+  updatePrice: boolean;
+  newPrice: string;
 };
 
-type Match = { product_id: number; factor: number; source: Row['source']; product: PickedProduct } | null;
+type MatchedProduct = PickedProduct & { price: number; cost_price: number | null; markup_percent: number | null };
+type Match = { product_id: number; factor: number; source: Row['source']; product: MatchedProduct } | null;
+
+const NEW_ROW = { factor: '1', qty: '', cost: '', ignore: false, source: null, markup: null, updatePrice: false, newPrice: '' } as const;
+
+/** Preço sugerido pela margem sobre o custo desta nota. */
+function suggestedPrice(unitCost: number | null, markup: number | null) {
+  return unitCost !== null && markup !== null ? Math.round(unitCost * (1 + markup / 100) * 100) / 100 : null;
+}
 
 const SOURCE_LABEL = { supplier: 'já usado deste fornecedor', code: 'mesmo código', name: 'mesmo nome' } as const;
 
@@ -55,9 +68,67 @@ function rowValues(row: Row) {
   return { quantity, unitCost: row.cost.trim() ? parseDecimal(row.cost) : null };
 }
 
+/** Preço de venda: o atual, a margem com o custo desta nota e o sugerido pela margem do produto. */
+function PriceSuggestion({
+  row,
+  unitCost,
+  onChange,
+}: {
+  row: Row;
+  unitCost: number | null;
+  onChange: (changes: Partial<Row>) => void;
+}) {
+  const price = row.product!.price!;
+  const suggested = suggestedPrice(unitCost, row.markup);
+  const margin = unitCost && unitCost > 0 ? ((price / unitCost - 1) * 100) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-2 text-[13px]">
+      <span className="text-muted-foreground">
+        Venda hoje <strong className="text-foreground tabular-nums">{formatMoney(price)}</strong>
+        {margin !== null && (
+          <span className={cn('ml-1 tabular-nums', margin < 0 && 'font-semibold text-destructive')}>
+            ({margin < 0 ? 'abaixo do custo' : `margem ${formatPercent(Math.round(margin * 10) / 10)}`})
+          </span>
+        )}
+        {suggested !== null && suggested !== price && (
+          <>
+            {' '}
+            · sugerido <strong className="text-foreground tabular-nums">{formatMoney(suggested)}</strong>
+            <span className="ml-1">(+{formatPercent(row.markup!)})</span>
+          </>
+        )}
+      </span>
+      <label className="flex items-center gap-2">
+        <Checkbox
+          checked={row.updatePrice}
+          onChange={(e) =>
+            onChange({ updatePrice: e.target.checked, newPrice: row.newPrice || moneyToInput(suggested ?? price) })
+          }
+        />
+        Atualizar preço de venda
+      </label>
+      {row.updatePrice && (
+        <Input
+          aria-label={`Novo preço de ${row.product!.name}`}
+          inputMode="decimal"
+          value={row.newPrice}
+          onChange={(e) => onChange({ newPrice: e.target.value })}
+          className="h-8 w-28 text-right tabular-nums"
+        />
+      )}
+    </div>
+  );
+}
+
 export function StockEntryPage() {
   useDocumentTitle('Entrada de nota');
   const user = useUser();
+  // Margem padrão da loja: sugere o preço de venda dos produtos sem margem própria.
+  const salesSettings = useQuery({
+    queryKey: ['sales-settings'],
+    queryFn: () => api<{ settings: SalesSettings }>('/sales-settings').then((r) => r.settings),
+  });
+  const defaultMarkup = salesSettings.data?.default_markup_percent ?? null;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
@@ -105,12 +176,11 @@ export function StockEntryPage() {
           return {
             key: index + 1,
             xml: item,
+            ...NEW_ROW,
             product: match?.product ?? null,
             factor: decimalToInput(match?.factor ?? 1),
-            qty: '',
-            cost: '',
-            ignore: false,
             source: match?.source ?? null,
+            markup: match?.product.markup_percent ?? defaultMarkup,
           };
         }),
       );
@@ -127,11 +197,13 @@ export function StockEntryPage() {
     setError(null);
     setSupplierName('');
     setInvoiceNumber('');
-    setRows([{ key: 1, xml: null, product: null, factor: '1', qty: '', cost: '', ignore: false, source: null }]);
+    setRows([{ ...NEW_ROW, key: 1, xml: null, product: null, markup: defaultMarkup }]);
   }
 
   const save = useMutation({
-    mutationFn: (items: { product_id: number; quantity: number; unit_cost: number | null; supplier_code: string | null; factor: number }[]) => {
+    mutationFn: (
+      items: { product_id: number; quantity: number; unit_cost: number | null; supplier_code: string | null; factor: number; new_price: number | null }[],
+    ) => {
       const issued = invoice?.issuedAt ?? null;
       return api<{ entry: { id: number } }>('/stock/entries', {
         method: 'POST',
@@ -169,7 +241,10 @@ export function StockEntryPage() {
       if (!row.product) return setError(`Escolha o produto da loja para ${label}, ou marque "Ignorar".`);
       const { quantity, unitCost } = rowValues(row);
       if (!(quantity > 0)) return setError(`Informe a quantidade de ${row.product.name}.`);
+      const newPrice = row.updatePrice ? parseDecimal(row.newPrice) : null;
+      if (row.updatePrice && (newPrice === null || newPrice < 0)) return setError(`Preço de venda inválido para ${row.product.name}.`);
       items.push({
+        new_price: newPrice,
         product_id: row.product.id,
         quantity,
         unit_cost: unitCost,
@@ -277,7 +352,7 @@ export function StockEntryPage() {
                           </span>
                           <ProductPicker
                             value={row.product}
-                            onChange={(product) => update(row.key, { product, source: null })}
+                            onChange={(product) => update(row.key, { product, source: null, markup: defaultMarkup, updatePrice: false, newPrice: '' })}
                             invalid={!row.ignore && !row.product}
                           />
                         </div>
@@ -330,6 +405,13 @@ export function StockEntryPage() {
                           </>
                         )}
                       </div>
+                      {row.product && !row.ignore && row.product.price !== undefined && (
+                        <PriceSuggestion
+                          row={row}
+                          unitCost={unitCost}
+                          onChange={(changes) => update(row.key, changes)}
+                        />
+                      )}
                     </li>
                   );
                 })}
@@ -342,7 +424,7 @@ export function StockEntryPage() {
                     onClick={() =>
                       setRows((rs) => [
                         ...rs,
-                        { key: Math.max(...rs.map((r) => r.key)) + 1, xml: null, product: null, factor: '1', qty: '', cost: '', ignore: false, source: null },
+                        { ...NEW_ROW, key: Math.max(...rs.map((r) => r.key)) + 1, xml: null, product: null, markup: defaultMarkup },
                       ])
                     }
                   >

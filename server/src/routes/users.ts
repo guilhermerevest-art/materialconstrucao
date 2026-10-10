@@ -33,6 +33,10 @@ const userFields = {
   // Setores do fluxo do pedido: só quem é do setor tira o pedido das etapas dele.
   // Ausente na edição mantém os setores atuais.
   sector_ids: z.array(z.number().int().positive()).max(50).optional(),
+  // Venda: desconto máximo (nulo = o padrão da loja) e se libera desconto dos outros.
+  // Ausentes mantêm o que está salvo.
+  max_discount_percent: z.number('Desconto máximo inválido.').min(0, 'Use de 0 a 100%.').max(100, 'Use de 0 a 100%.').nullable().optional(),
+  can_approve_discounts: z.boolean().optional(),
 };
 
 const sellerNeedsStore = (u: { role: string; store_id: number | null }) => u.role === 'admin' || u.store_id !== null;
@@ -50,6 +54,7 @@ const updateSchema = z
   .refine(sellerNeedsStore, SELLER_NEEDS_STORE);
 
 const USER_COLUMNS = `u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id, s.name as store_name, u.active, u.created_at,
+  u.max_discount_percent, u.can_approve_discounts,
   coalesce((select array_agg(us.sector_id::int order by us.sector_id) from user_sectors us where us.user_id = u.id), '{}') as sector_ids`;
 
 /** Troca os setores do usuário. Roda na mesma transação que salva o usuário. */
@@ -59,6 +64,21 @@ async function saveUserSectors(db: pg.PoolClient, tenantId: number, userId: numb
   await db.query(
     'insert into user_sectors (user_id, sector_id, tenant_id) select $1, unnest($2::bigint[]), $3',
     [userId, [...new Set(sectorIds)], tenantId],
+  );
+}
+
+/** Campos de venda do usuário: só grava o que veio (ausente mantém). */
+async function saveSalesFields(
+  db: pg.PoolClient,
+  id: number,
+  body: { max_discount_percent?: number | null; can_approve_discounts?: boolean },
+) {
+  await db.query(
+    `update users
+        set max_discount_percent = case when $2 then $3 else max_discount_percent end,
+            can_approve_discounts = coalesce($4, can_approve_discounts)
+      where id = $1`,
+    [id, body.max_discount_percent !== undefined, body.max_discount_percent ?? null, body.can_approve_discounts ?? null],
   );
 }
 
@@ -110,6 +130,7 @@ export function usersRouter(ctx: AppContext) {
       );
       const id = rows[0]!.id;
       await saveUserSectors(db, me.tenant_id, id, body.sector_ids ?? []);
+      await saveSalesFields(db, id, body);
       return loadUser(db, id);
     });
 
@@ -139,6 +160,7 @@ export function usersRouter(ctx: AppContext) {
       );
       if (!rowCount) throw new HttpError(404, NOT_FOUND);
       if (body.sector_ids) await saveUserSectors(db, me.tenant_id, id, body.sector_ids);
+      await saveSalesFields(db, id, body);
       return loadUser(db, id);
     });
 

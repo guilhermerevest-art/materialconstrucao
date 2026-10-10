@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router';
@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { ClientSitesDialog, siteDeliveryAddress, useClientSites } from '@/components/ClientSitesDialog';
 import { CartTable, type CartItem } from '@/components/pdv/CartTable';
 import { ClientPicker, type ClientPickerHandle } from '@/components/pdv/ClientPicker';
+import { DiscountApprovalDialog, type DiscountApprovalRequest } from '@/components/pdv/DiscountApprovalDialog';
 import { ProductSearch, type ProductSearchHandle } from '@/components/pdv/ProductSearch';
 import { DiscountBreakdown, EmptyState, PageHeader, PriceTag } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -19,13 +20,15 @@ import {
   centsToMoney,
   decimalToInput,
   discountCents,
+  formatMoney,
   formatOrderNumber,
   formatPercent,
+  formatQuantity,
   lineTotalCents,
   parseDecimal,
 } from '@/lib/format';
-import { useDocumentTitle, useHotkeys } from '@/lib/hooks';
-import type { Client, DiscountType, Order, OrderStatus, PaymentMethod, Product, Store } from '@/lib/types';
+import { useDebouncedValue, useDocumentTitle, useHotkeys } from '@/lib/hooks';
+import type { Client, DiscountType, Order, OrderStatus, PaymentMethod, PricePreview, Product, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const DISCOUNT_TYPES: { value: DiscountType; label: string }[] = [
@@ -65,6 +68,8 @@ export function OrderEditorPage() {
   const [discountText, setDiscountText] = useState('');
   const [storeId, setStoreId] = useState<number | null>(user.store_id);
   const [errors, setErrors] = useState<{ client?: string; items?: string; store?: string }>({});
+  const [approval, setApproval] = useState<DiscountApprovalRequest | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const dirty = useRef(false);
   const leaving = useRef(false);
 
@@ -130,7 +135,49 @@ export function OrderEditorPage() {
     if (editingId === null) clientPicker.current?.focus();
   }, [editingId]);
 
-  const subtotalCents = items.reduce((sum, item) => sum + lineTotalCents(item.unit_price, item.quantity), 0);
+  // Preço que cada item vai ter ao salvar (tabela do cliente, faixa, preço do orçamento): o
+  // servidor calcula, a tela só mostra. Espera a digitação da quantidade parar.
+  const previewKey = useDebouncedValue(
+    JSON.stringify({ client: client?.id ?? null, items: items.map((i) => [i.product_id, i.quantity]) }),
+    250,
+  );
+  const preview = useQuery({
+    queryKey: ['price-preview', editingId, previewKey],
+    queryFn: () => {
+      const key = JSON.parse(previewKey) as { client: number | null; items: [number, number][] };
+      return api<PricePreview>('/orders/price-preview', {
+        method: 'POST',
+        body: {
+          client_id: key.client,
+          order_id: editingId,
+          items: key.items.map(([product_id, quantity]) => ({ product_id, quantity })),
+        },
+      });
+    },
+    enabled: items.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  const priceList = preview.data?.price_list ?? null;
+  const previewById = new Map(preview.data?.items.map((p) => [p.product_id, p]) ?? []);
+  const pricedItems: CartItem[] = items.map((item) => {
+    const p = previewById.get(item.product_id);
+    if (!p) return item;
+    return {
+      ...item,
+      unit_price: p.unit_price,
+      price_note: p.kept_previous
+        ? 'Preço do orçamento'
+        : p.source === 'list'
+          ? `Tabela ${priceList?.name ?? ''}`.trim()
+          : p.source === 'tier'
+            ? 'Preço por quantidade'
+            : null,
+      tier_hint: p.next_tier
+        ? `A partir de ${formatQuantity(p.next_tier.min_quantity)} ${item.unit}: ${formatMoney(p.next_tier.price)}`
+        : null,
+    };
+  });
+  const subtotalCents = pricedItems.reduce((sum, item) => sum + lineTotalCents(item.unit_price, item.quantity), 0);
   // Campo vazio = sem desconto. O servidor recalcula; aqui é só a prévia.
   const discountValue = discountText.trim() ? parseDecimal(discountText) : null;
   const discountError =
@@ -145,7 +192,7 @@ export function OrderEditorPage() {
   const totalCents = subtotalCents - appliedDiscountCents;
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: (discountApproval?: { username: string; password: string }) => {
       const body = {
         client_id: client!.id,
         status,
@@ -157,6 +204,7 @@ export function OrderEditorPage() {
         discount_value: discountValue,
         store_id: isAdmin ? storeId : undefined,
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
+        discount_approval: discountApproval,
       };
       return editingId
         ? api<{ order: Order }>(`/orders/${editingId}`, { method: 'PUT', body })
@@ -164,13 +212,26 @@ export function OrderEditorPage() {
     },
     onSuccess: ({ order }) => {
       leaving.current = true;
+      setApproval(null);
       queryClient.setQueryData(['order', order.id], order);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       // A tela de detalhe confirma o salvamento e oferece o envio por WhatsApp.
       navigate(`/pedidos/${order.id}`, { state: { justSaved: true } });
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Não foi possível salvar.'),
+    onError: (err) => {
+      // Desconto acima do limite: quem pode liberar digita a senha e o pedido sai na hora.
+      if (err instanceof ApiError && err.code === 'DISCOUNT_APPROVAL_REQUIRED') {
+        setApprovalError(null);
+        setApproval({ limit: Number(err.body?.limit ?? 0), requested: Number(err.body?.requested ?? 0) });
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'DISCOUNT_APPROVAL_INVALID') {
+        setApprovalError(err.message);
+        return;
+      }
+      toast.error(err instanceof ApiError ? err.message : 'Não foi possível salvar.');
+    },
   });
 
   // Aviso ao sair com o carrinho preenchido e não salvo.
@@ -215,7 +276,7 @@ export function OrderEditorPage() {
           code: product.code,
           name: product.name,
           unit: product.unit,
-          unit_price: product.price,
+          unit_price: product.client_price ?? product.price,
           quantity,
         },
       ];
@@ -243,7 +304,7 @@ export function OrderEditorPage() {
       toast.error(`Desconto: ${discountError}`);
       return document.getElementById('desconto')?.focus();
     }
-    save.mutate();
+    save.mutate(undefined);
   }
 
   useHotkeys({
@@ -313,6 +374,9 @@ export function OrderEditorPage() {
             <CardContent>
               <ClientPicker ref={clientPicker} value={client} onChange={selectClient} invalid={Boolean(errors.client)} />
               {errors.client && <p className="mt-2 text-[13px] text-destructive">{errors.client}</p>}
+              {client && priceList && (
+                <p className="mt-2 text-[13px] font-medium text-success">Tabela de preço: {priceList.name}</p>
+              )}
             </CardContent>
           </Card>
 
@@ -326,11 +390,17 @@ export function OrderEditorPage() {
               )}
             </CardHeader>
             <CardContent>
-              <ProductSearch ref={productSearch} onAdd={addProduct} invalid={Boolean(errors.items)} storeId={storeId} />
+              <ProductSearch
+                ref={productSearch}
+                onAdd={addProduct}
+                invalid={Boolean(errors.items)}
+                storeId={storeId}
+                clientId={client?.id ?? null}
+              />
               {errors.items && <p className="mt-2 text-[13px] text-destructive">{errors.items}</p>}
             </CardContent>
             <CartTable
-              items={items}
+              items={pricedItems}
               onQuantityChange={(productId, quantity) => {
                 setItems((current) => current.map((i) => (i.product_id === productId ? { ...i, quantity } : i)));
                 changed();
@@ -415,7 +485,16 @@ export function OrderEditorPage() {
                 </NativeSelect>
               </Field>
 
-              <Field label="Desconto" htmlFor="desconto" error={discountError}>
+              <Field
+                label="Desconto"
+                htmlFor="desconto"
+                error={discountError}
+                hint={
+                  user.max_discount_percent != null
+                    ? `Seu limite: ${formatPercent(user.max_discount_percent)}. Acima disso, alguém libera com a senha.`
+                    : undefined
+                }
+              >
                 <div className="flex gap-2">
                   <div className="flex shrink-0 rounded-md border border-input p-0.5" role="radiogroup" aria-label="Tipo de desconto">
                     {DISCOUNT_TYPES.map((option) => (
@@ -546,6 +625,16 @@ export function OrderEditorPage() {
           }}
         />
       )}
+      <DiscountApprovalDialog
+        request={approval}
+        error={approvalError}
+        loading={save.isPending}
+        onConfirm={(credentials) => save.mutate(credentials)}
+        onCancel={() => {
+          setApproval(null);
+          document.getElementById('desconto')?.focus();
+        }}
+      />
       <ConfirmDialog
         open={blocker.state === 'blocked'}
         onOpenChange={(open) => !open && blocker.state === 'blocked' && blocker.reset()}

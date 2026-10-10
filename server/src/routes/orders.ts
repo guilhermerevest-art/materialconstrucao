@@ -21,6 +21,7 @@ import { loadFinanceSettings, orderOpenAmount } from '../finance/queries.js';
 import { pixPayload, pixQrPng } from '../finance/pix.js';
 import { completeRemaining } from '../deliveries/queries.js';
 import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
+import { applyPreviousPrices, assertDiscountAllowed, discountLimit, loadClientPriceList, resolvePrices } from '../pricing/queries.js';
 import { assertClientSite } from './clientSites.js';
 import {
   loadOrderWorkflow,
@@ -54,6 +55,11 @@ const orderSchema = z.object({
     .transform((v) => Math.round(v * 100) / 100)
     .nullable()
     .default(null),
+  // Desconto acima do limite do vendedor: usuário e senha de quem libera.
+  discount_approval: z
+    .object({ username: z.string().trim().min(1, 'Informe o usuário de quem libera.').max(80), password: z.string().min(1, 'Informe a senha.').max(200) })
+    .nullable()
+    .optional(),
   items: z
     .array(itemSchema, 'Adicione pelo menos um produto.')
     .min(1, 'Adicione pelo menos um produto.')
@@ -86,6 +92,13 @@ const listSchema = z.object({
   store_id: optionalQueryId,
   mine: z.enum(['true', 'false']).optional(),
   ...pagination,
+});
+
+const previewSchema = z.object({
+  client_id: z.number().int().positive().nullable().default(null),
+  // Editando um orçamento: os itens que já estavam nele mantêm o preço da época.
+  order_id: z.number().int().positive().nullable().default(null),
+  items: z.array(itemSchema).max(300),
 });
 
 const cancelSchema = z.object({
@@ -254,6 +267,42 @@ export function ordersRouter(ctx: AppContext) {
     });
   });
 
+  /**
+   * Preço que cada item vai ter ao salvar (tabela do cliente, faixa de quantidade, preço
+   * da época no orçamento), para o PDV mostrar antes. Mesma conta do salvamento.
+   */
+  router.post('/price-preview', async (req, res) => {
+    const user = currentUser(req);
+    const body = previewSchema.parse(req.body);
+    const data = await withSession(pool, user, async (db) => {
+      const priceList = await loadClientPriceList(db, body.client_id);
+      const resolved = await resolvePrices(db, priceList, body.items);
+      let previous = new Map<number, { unit_price: number; quantity: number }>();
+      let sameClient = true;
+      if (body.order_id) {
+        const { rows: orders } = await db.query<{ client_id: number; status: string }>(
+          'select client_id, status from orders where id = $1',
+          [body.order_id],
+        );
+        if (orders[0]?.status === 'quote') {
+          sameClient = orders[0].client_id === body.client_id;
+          const { rows } = await db.query<{ product_id: number; unit_price: number; quantity: number }>(
+            'select product_id, unit_price, quantity from order_items where order_id = $1',
+            [body.order_id],
+          );
+          previous = new Map(rows.map((r) => [r.product_id, { unit_price: r.unit_price, quantity: r.quantity }]));
+        }
+      }
+      const prices = applyPreviousPrices(resolved, body.items, previous, sameClient);
+      return {
+        price_list: priceList ? { id: priceList.id, name: priceList.name } : null,
+        discount_limit: await discountLimit(db, user),
+        items: resolved.map((r, i) => ({ ...r, unit_price: prices[i]!, kept_previous: prices[i] !== r.unit_price })),
+      };
+    });
+    res.json(data);
+  });
+
   router.get('/:id', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
     const user = currentUser(req);
@@ -294,6 +343,7 @@ export function ordersRouter(ctx: AppContext) {
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
+      await assertDiscountAllowed(db, id, user, body.discount_approval);
       if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });
@@ -309,10 +359,11 @@ export function ordersRouter(ctx: AppContext) {
       const { rows } = await db.query<{
         status: string;
         store_id: number;
+        client_id: number;
         payment_method_id: number | null;
         client_site_id: number | null;
       }>(
-        'select status, store_id, payment_method_id, client_site_id from orders where id = $1 for update',
+        'select status, store_id, client_id, payment_method_id, client_site_id from orders where id = $1 for update',
         [id],
       );
       const current = rows[0];
@@ -326,8 +377,8 @@ export function ordersRouter(ctx: AppContext) {
       await assertClientSite(db, body.client_site_id, body.client_id, current.client_site_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id, current.payment_method_id);
 
-      const previous = await db.query<{ product_id: number; unit_price: number }>(
-        'select product_id, unit_price from order_items where order_id = $1',
+      const previous = await db.query<{ product_id: number; unit_price: number; quantity: number }>(
+        'select product_id, unit_price, quantity from order_items where order_id = $1',
         [id],
       );
       await db.query(
@@ -352,7 +403,14 @@ export function ordersRouter(ctx: AppContext) {
           body.client_site_id,
         ],
       );
-      await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
+      await writeOrderItems(
+        db,
+        id,
+        body.items,
+        new Map(previous.rows.map((r) => [r.product_id, { unit_price: r.unit_price, quantity: r.quantity }])),
+        current.client_id === body.client_id,
+      );
+      await assertDiscountAllowed(db, id, user, body.discount_approval);
       if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });

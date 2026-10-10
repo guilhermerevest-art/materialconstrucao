@@ -7,13 +7,16 @@ export class ApiError extends Error {
   readonly conflicts?: Client[];
   /** O que falta para emitir a nota fiscal (cadastro da empresa, do cliente ou do produto). */
   readonly problems?: string[];
+  /** Resposta inteira, para os campos extras de cada erro (ex.: limite de desconto). */
+  readonly body?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string, conflicts?: Client[], problems?: string[]) {
+  constructor(message: string, status: number, code?: string, conflicts?: Client[], problems?: string[], body?: Record<string, unknown>) {
     super(message);
     this.status = status;
     this.code = code;
     this.conflicts = conflicts;
     this.problems = problems;
+    this.body = body;
   }
 }
 
@@ -55,6 +58,7 @@ export async function api<T>(path: string, options: { method?: Method; body?: un
       data?.code,
       data?.conflicts,
       data?.problems,
+      data ?? undefined,
     );
   }
   return data as T;

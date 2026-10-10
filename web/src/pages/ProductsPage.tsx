@@ -1,7 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Package, Pencil, Plus, Receipt, Search, Trash2 } from 'lucide-react';
+import { Package, Pencil, Percent, Plus, Receipt, Search, Tags, Trash2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { PriceAdjustDialog } from '@/components/PriceAdjustDialog';
+import { emptyPricingForm, ProductPricingTab, pricingToBody, pricingToForm, type PricingForm } from '@/components/ProductPricingTab';
 import { EmptyState, PageHeader, Pagination } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -30,9 +32,9 @@ import {
   SIMPLES_CSOSN,
   TAX_ORIGINS,
 } from '@/lib/fiscal';
-import { decimalToInput, formatMoney, parseDecimal } from '@/lib/format';
+import { decimalToInput, formatMoney, moneyToInput, parseDecimal } from '@/lib/format';
 import { useDebouncedValue, useDocumentTitle } from '@/lib/hooks';
-import type { FiscalSettings, Paginated, Product, ProductFiscal } from '@/lib/types';
+import type { FiscalSettings, Paginated, Product, ProductFiscal, ProductPricing, SalesSettings } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -308,7 +310,19 @@ function ProductFormDialog({
   const [price, setPrice] = useState('');
   const [active, setActive] = useState(true);
   const [fiscal, setFiscal] = useState<FiscalForm>(() => fiscalToForm(undefined));
+  const [pricingForm, setPricingForm] = useState<PricingForm>(emptyPricingForm);
   const [tab, setTab] = useState('geral');
+  const pricing = useQuery({
+    queryKey: ['product-pricing', product?.id],
+    queryFn: () => api<{ pricing: ProductPricing }>(`/products/${product!.id}/pricing`).then((r) => r.pricing),
+    enabled: open && Boolean(product),
+  });
+  // Produto novo ainda não tem custo nem histórico, mas mostra a margem padrão.
+  const salesSettings = useQuery({
+    queryKey: ['sales-settings'],
+    queryFn: () => api<{ settings: SalesSettings }>('/sales-settings').then((r) => r.settings),
+    enabled: open && !product,
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -319,17 +333,26 @@ function ProductFormDialog({
     setPrice(product ? decimalToInput(product.price) : '');
     setActive(product?.active ?? true);
     setFiscal(fiscalToForm(product?.fiscal));
+    setPricingForm(emptyPricingForm);
     setTab('geral');
     setError(null);
   }, [open, product]);
 
+  useEffect(() => {
+    if (open && pricing.data) setPricingForm(pricingToForm(pricing.data));
+  }, [open, pricing.data]);
+
   const save = useMutation({
-    mutationFn: (body: object) =>
-      product
-        ? api<{ product: Product }>(`/products/${product.id}`, { method: 'PUT', body })
-        : api<{ product: Product }>('/products', { method: 'POST', body }),
+    mutationFn: async ({ body, pricingBody }: { body: object; pricingBody: object }) => {
+      const result = product
+        ? await api<{ product: Product }>(`/products/${product.id}`, { method: 'PUT', body })
+        : await api<{ product: Product }>('/products', { method: 'POST', body });
+      await api(`/products/${result.product.id}/pricing`, { method: 'PUT', body: pricingBody });
+      return result;
+    },
     onSuccess: ({ product: saved }) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product-pricing', saved.id] });
       toast.success(product ? 'Produto atualizado.' : `${saved.name} cadastrado.`);
       onOpenChange(false);
     },
@@ -353,8 +376,16 @@ function ProductFormDialog({
       setTab('fiscal');
       return setError(`${RATE_LABELS[fiscalBody.invalid as keyof typeof RATE_LABELS]} inválida. Exemplo: 18 ou 1,65`);
     }
+    const pricingBody = pricingToBody(pricingForm);
+    if ('invalid' in pricingBody) {
+      setTab('preco');
+      return setError(pricingBody.invalid);
+    }
     setError(null);
-    save.mutate({ code, name, unit, price: Math.round(parsedPrice * 100) / 100, active, fiscal: fiscalBody.body });
+    save.mutate({
+      body: { code, name, unit, price: Math.round(parsedPrice * 100) / 100, active, fiscal: fiscalBody.body },
+      pricingBody: pricingBody.body,
+    });
   }
 
   return (
@@ -376,6 +407,10 @@ function ProductFormDialog({
                 <Receipt />
                 Fiscal
                 {!fiscal.ncm && <span className="size-1.5 rounded-full bg-primary" aria-label="(sem NCM)" />}
+              </TabsTrigger>
+              <TabsTrigger value="preco">
+                <Tags />
+                Preço
               </TabsTrigger>
             </TabsList>
 
@@ -423,6 +458,25 @@ function ProductFormDialog({
             <TabsContent value="fiscal" forceMount className="data-[state=inactive]:hidden">
               {open && <ProductFiscalFields value={fiscal} onChange={setFiscal} />}
             </TabsContent>
+
+            <TabsContent value="preco" forceMount className="data-[state=inactive]:hidden">
+              <ProductPricingTab
+                value={pricingForm}
+                onChange={setPricingForm}
+                pricing={
+                  pricing.data ??
+                  (salesSettings.data
+                    ? { id: 0, price: 0, cost_price: null, markup_percent: null, default_markup_percent: salesSettings.data.default_markup_percent, tiers: [], history: [] }
+                    : undefined)
+                }
+                unit={unit || 'UN'}
+                onUseSuggested={(value) => {
+                  setPrice(moneyToInput(value));
+                  setTab('geral');
+                  toast.success('Preço sugerido no campo Preço. Salve para gravar.');
+                }}
+              />
+            </TabsContent>
           </Tabs>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -448,6 +502,7 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ open: boolean; product: Product | null }>({ open: false, product: null });
   const [deleting, setDeleting] = useState<Product | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
   const q = useDebouncedValue(search.trim(), 300);
 
   const products = useQuery({
@@ -478,10 +533,16 @@ export function ProductsPage() {
         description={isAdmin ? 'Catálogo único da rede.' : 'Consulta de preços do catálogo.'}
         actions={
           isAdmin && (
-            <Button onClick={() => setEditing({ open: true, product: null })}>
-              <Plus />
-              Novo produto
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setAdjusting(true)}>
+                <Percent />
+                Reajustar preços
+              </Button>
+              <Button onClick={() => setEditing({ open: true, product: null })}>
+                <Plus />
+                Novo produto
+              </Button>
+            </>
           )
         }
       />
@@ -630,6 +691,7 @@ export function ProductsPage() {
           />
         </>
       )}
+      {adjusting && <PriceAdjustDialog search={q} onClose={() => setAdjusting(false)} />}
     </div>
   );
 }

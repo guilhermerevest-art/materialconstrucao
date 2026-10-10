@@ -152,6 +152,30 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   Cartão de débito, Cartão de crédito e Boleto. O pedido guarda o nome da forma da época, e forma usada
   em pedidos não pode ser excluída, só desativada (sai da lista, mas o orçamento que já a tinha continua com ela).
 
+## Preço
+
+Tudo opcional: sem tabela, faixa ou limite configurado, o pedido usa o preço do catálogo como sempre.
+
+- **Tabelas de preço** (Administração → Tabelas de preço): varejo, atacado, construtora... Cada tabela tem um
+  ajuste sobre o catálogo (ex.: 8% abaixo) e, se quiser, preço próprio por produto. O admin põe o cliente na
+  tabela pelo cadastro dele; o PDV mostra "Tabela de preço: Atacado" e o preço da tabela na busca e no carrinho.
+  Tabela desativada ou excluída: o cliente volta ao catálogo. O pedido guarda o nome da tabela usada.
+- **Preço por quantidade** (produto → aba Preço): a partir de N unidades, o item sai pelo preço da faixa. Com
+  tabela, vale o menor dos dois. O carrinho avisa a próxima faixa ("A partir de 50 SC: R$ 34,90").
+- **O preço é sempre do servidor:** o PDV mostra a prévia, mas quem calcula é o servidor ao salvar. No
+  orçamento editado, o item mantém o preço da época; se a quantidade ou o cliente mudar, fica o menor entre o
+  da época e o de agora (nunca aumenta).
+- **Desconto com liberação:** limite padrão em Configurações → Vendas e, se quiser, um limite próprio por
+  vendedor. Acima do limite, o PDV pede usuário e senha de quem pode liberar (admin, ou vendedor marcado para
+  liberar, até o limite dele). O pedido mostra quem liberou; editar sem passar do liberado não pede de novo.
+  O admin não tem limite.
+- **Margem e reajuste:** margem sobre o custo padrão (Configurações → Vendas) ou por produto. Na entrada de
+  nota, cada item mostra a venda de hoje, a margem com o custo da nota e o preço sugerido, com a opção de
+  atualizar o preço na hora. **Reajustar preços** (Produtos) aplica % sobre o preço atual ou a margem sobre o
+  último custo, a todos ou aos da busca, com arredondamento para cima e prévia antes de gravar.
+- **Histórico de preço** no produto: toda mudança, por qualquer caminho, com motivo, quem e quando.
+- A venda guarda o custo de cada item na confirmação, para os relatórios de margem.
+
 ## Estoque
 
 Saldo por loja (não há depósito central), no menu **Estoque**. Todo mundo consulta, inclusive o saldo das
