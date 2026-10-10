@@ -62,6 +62,7 @@ export function ClientFormDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [contactName, setContactName] = useState('');
   const [details, setDetails] = useState<DetailsForm>(() => detailsToForm(undefined));
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
   const [tab, setTab] = useState('contato');
@@ -72,6 +73,7 @@ export function ClientFormDialog({
     if (!open) return;
     setName(client?.name ?? initialValues?.name ?? '');
     setWhatsapp(client ? formatWhatsapp(client.whatsapp) : (initialValues?.whatsapp ?? ''));
+    setContactName(client?.contact_name ?? '');
     setDetails(detailsToForm(client?.details));
     setAddress(addressToForm(client?.details));
     setTab('contato');
@@ -115,6 +117,8 @@ export function ClientFormDialog({
       const body = {
         name,
         whatsapp,
+        // Mesma regra: cliente que veio sem o campo (de outra tela) mantém o contato salvo.
+        contact_name: !client || client.contact_name !== undefined ? contactName : undefined,
         details: sendDetails ? {
           person_type: details.person_type,
           document: documentDigits || null,
@@ -253,6 +257,19 @@ export function ClientFormDialog({
                   autoComplete="off"
                   placeholder="(11) 98765-4321"
                   aria-invalid={Boolean(error && tab === 'contato') || undefined}
+                />
+              </Field>
+              <Field
+                label="Contato (opcional)"
+                htmlFor="cliente-contato"
+                hint={isCompany ? 'Quem compra pela empresa. As mensagens dizem "Olá" para ele.' : 'Com quem falar, se não for o próprio cliente.'}
+              >
+                <Input
+                  id="cliente-contato"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  maxLength={80}
+                  autoComplete="off"
                 />
               </Field>
             </TabsContent>

@@ -213,14 +213,13 @@ export async function moveOrderStage(
 /** Placeholders aceitos na mensagem da etapa. */
 export const MESSAGE_PLACEHOLDERS = ['{cliente}', '{pedido}', '{loja}', '{etapa}'] as const;
 
-/** Troca os placeholders da mensagem da etapa. {cliente} é o primeiro nome, como na legenda do PDF. */
+/** Troca os placeholders da mensagem da etapa. {cliente} é como o cliente é chamado (ver greetingName). */
 export function renderStageMessage(
   template: string,
-  values: { clientName: string; orderId: number; storeName: string; stageName: string },
+  values: { clientGreeting: string; orderId: number; storeName: string; stageName: string },
 ) {
-  const firstName = values.clientName.trim().split(/\s+/)[0] ?? '';
   const replacements: Record<string, string> = {
-    '{cliente}': firstName,
+    '{cliente}': values.clientGreeting,
     '{pedido}': formatOrderNumber(values.orderId),
     '{loja}': values.storeName,
     '{etapa}': values.stageName,

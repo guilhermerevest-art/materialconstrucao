@@ -60,6 +60,8 @@ export type Client = {
   name: string;
   whatsapp: string;
   created_at: string;
+  /** Com quem falar (vai no "Olá" das mensagens). Ausente nos avisos de WhatsApp duplicado. */
+  contact_name?: string | null;
   /** Ausente nos avisos de WhatsApp duplicado, que só trazem o básico. */
   details?: ClientDetails;
   /** Limite do crediário. Nulo: o cliente não compra no crediário. */

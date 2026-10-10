@@ -130,6 +130,9 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   Os dados fiscais do cliente (CPF/CNPJ, IE, endereço com código IBGE) ficam com o módulo fiscal.
 - **Limite de crédito** (só o admin define, em Clientes): quanto o cliente pode dever no crediário.
   Em branco, ele não compra no crediário.
+- **Contato do cliente** (opcional, no cadastro): com quem falar. As mensagens (legenda do PDF, aviso de etapa,
+  retomada) dizem "Olá, {contato}!"; sem contato, empresa (CNPJ no cadastro completo) é chamada pelo nome inteiro
+  e pessoa pelo primeiro nome.
 - WhatsApp do cliente é guardado só com dígitos e DDI (`(11) 98765-4321` vira `5511987654321`).
   Número de outro país deve começar com `+`.
 - **O mesmo WhatsApp não pode ficar em dois cadastros de cliente.** Ao salvar um número que

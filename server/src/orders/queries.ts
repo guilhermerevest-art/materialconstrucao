@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { HttpError } from '../errors.js';
 import type { OrderStatus } from '../lib/format.js';
+import { greetingName } from '../lib/greeting.js';
 
 export type OrderItem = {
   id: number;
@@ -13,6 +14,11 @@ export type OrderItem = {
   unit_price: number;
   subtotal: number;
 };
+
+/** Nome do "Olá, ...!" das mensagens do pedido. */
+export function orderGreeting(order: Pick<OrderDetail, 'client_name' | 'client_contact_name' | 'client_person_type'>) {
+  return greetingName({ name: order.client_name, contact_name: order.client_contact_name, person_type: order.client_person_type });
+}
 
 export type OrderDetail = {
   id: number;
@@ -50,6 +56,10 @@ export type OrderDetail = {
   cancel_reason: string | null;
   client_name: string;
   client_whatsapp: string;
+  /** Com quem falar no cliente (opcional). */
+  client_contact_name: string | null;
+  /** F (pessoa) ou J (empresa), do cadastro completo. */
+  client_person_type: string | null;
   store_name: string;
   store_address: string | null;
   store_phone: string | null;
@@ -96,6 +106,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
             o.payment_method_id, o.payment_method_name, o.confirmed_at, o.delivery_tracking, o.sent_at, o.created_at, o.updated_at,
             o.cancelled_from, o.cancelled_at, cu.name as cancelled_by_name, o.cancel_reason,
             c.name as client_name, c.whatsapp as client_whatsapp,
+            c.contact_name as client_contact_name, c.person_type as client_person_type,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,
             u.name as user_name

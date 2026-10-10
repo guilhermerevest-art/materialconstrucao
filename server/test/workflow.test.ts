@@ -2,6 +2,7 @@ import type pg from 'pg';
 import type request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { createApp } from '../src/app.js';
+import { greetingName } from '../src/lib/greeting.js';
 import { renderStageMessage } from '../src/workflow/queries.js';
 import {
   login,
@@ -20,10 +21,17 @@ type Stage = { id: number; name: string; sector_id: number | null; sla_minutes: 
 type Workflow = { id: number; store_id: number | null; delivery_type: 'pickup' | 'delivery'; stages: Stage[] };
 
 describe('mensagem da etapa', () => {
-  it('troca os placeholders e usa o primeiro nome do cliente', () => {
+  it('chama pelo contato, a empresa pelo nome inteiro e a pessoa pelo primeiro nome', () => {
+    expect(greetingName({ name: '  Maria da Silva' })).toBe('Maria');
+    expect(greetingName({ name: 'Construtora Alfa Ltda', person_type: 'J' })).toBe('Construtora Alfa Ltda');
+    expect(greetingName({ name: 'Construtora Alfa Ltda', person_type: 'J', contact_name: ' Rogério Lima ' })).toBe('Rogério');
+    expect(greetingName({ name: 'Maria da Silva', contact_name: '  ' })).toBe('Maria');
+  });
+
+  it('troca os placeholders', () => {
     expect(
       renderStageMessage('Olá, {cliente}! Pedido {PEDIDO} em "{etapa}" na {loja}. {outro}', {
-        clientName: '  Maria da Silva',
+        clientGreeting: greetingName({ name: '  Maria da Silva' }),
         orderId: 42,
         storeName: 'Loja A',
         stageName: 'Saiu para entrega',

@@ -15,7 +15,7 @@ import {
 import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
-import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
+import { loadOrderDetail, orderGreeting, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf, type OrderPdfPix } from '../pdf/orderPdf.js';
 import { loadFinanceSettings, orderOpenAmount } from '../finance/queries.js';
 import { pixPayload, pixQrPng } from '../finance/pix.js';
@@ -162,7 +162,7 @@ async function resolvePaymentMethod(db: pg.PoolClient, id: number | null, curren
 }
 
 export function orderCaption(order: OrderDetail) {
-  const firstName = order.client_name.trim().split(/\s+/)[0] ?? '';
+  const firstName = orderGreeting(order);
   const label = documentLabel(order.status).toLowerCase();
   return [
     `Olá, ${firstName}! Segue em PDF o seu ${label} nº ${formatOrderNumber(order.id)}.`,
@@ -188,7 +188,7 @@ export function ordersRouter(ctx: AppContext) {
     const number = clientNumber(order);
     if (!number) return { status: 'failed', error: 'O WhatsApp do cliente é inválido, então ele não foi avisado.' };
     const text = renderStageMessage(stage.whatsapp_message, {
-      clientName: order.client_name,
+      clientGreeting: orderGreeting(order),
       orderId: order.id,
       storeName: order.store_name,
       stageName: stage.name,

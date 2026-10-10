@@ -5,7 +5,7 @@ import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
-import { likePattern, optionalQuery, pagination, parseId } from '../lib/validation.js';
+import { likePattern, optionalQuery, optionalText, pagination, parseId } from '../lib/validation.js';
 import { clientDetailsSchema, type ClientDetailsInput } from '../fiscal/validation.js';
 
 const clientSchema = z.object({
@@ -22,6 +22,8 @@ const clientSchema = z.object({
       }
       return normalized;
     }),
+  // Com quem falar (vai no "Olá" das mensagens). Ausente, mantém o que está salvo.
+  contact_name: optionalText(80).optional(),
   // Aba "Cadastro completo" (dados da NF-e). Ausente, mantém o que está salvo.
   details: clientDetailsSchema.optional(),
 });
@@ -45,7 +47,7 @@ const DETAIL_COLUMNS = [
   'address_state',
 ] as const satisfies readonly (keyof ClientDetailsInput)[];
 
-const CLIENT_COLUMNS = `id, name, whatsapp, created_at, ${DETAIL_COLUMNS.join(', ')}`;
+const CLIENT_COLUMNS = `id, name, whatsapp, contact_name, created_at, ${DETAIL_COLUMNS.join(', ')}`;
 
 const listSchema = z.object({ q: optionalQuery, ...pagination });
 
@@ -68,6 +70,10 @@ function toClient(row: Record<string, unknown>) {
 function writableColumns(body: z.infer<typeof clientSchema>) {
   const columns: string[] = ['name', 'whatsapp'];
   const values: unknown[] = [body.name, body.whatsapp];
+  if (body.contact_name !== undefined) {
+    columns.push('contact_name');
+    values.push(body.contact_name);
+  }
   if (body.details) {
     for (const column of DETAIL_COLUMNS) {
       columns.push(column);

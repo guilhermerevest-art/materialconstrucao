@@ -221,6 +221,21 @@ describeDb('retomada de orçamentos', () => {
     expect((await list(seller)).map((r) => r.id)).toEqual([id]);
   });
 
+  it('mensagem chama o cliente pelo contato cadastrado', async () => {
+    const seller = await login(app, 'vendedor.a');
+    const id = await quote(seller);
+    const saved = await seller
+      .put(`/api/clients/${f.clientId}`)
+      .send({ name: 'Maria da Silva', whatsapp: '5511987654321', contact_name: 'Rogério Lima' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.client.contact_name).toBe('Rogério Lima');
+    expect((await seller.get(`/api/orders/${id}/followups`)).body.message).toMatch(/^Olá, Rogério! /);
+
+    // Sem mandar o campo, o contato continua o mesmo.
+    await seller.put(`/api/clients/${f.clientId}`).send({ name: 'Maria da Silva', whatsapp: '5511987654321' });
+    expect((await seller.get(`/api/clients/${f.clientId}`)).body.client.contact_name).toBe('Rogério Lima');
+  });
+
   it('o admin muda os dias e a mensagem; vendedor não', async () => {
     const admin = await login(app, 'admin');
     const seller = await login(app, 'vendedor.a');
