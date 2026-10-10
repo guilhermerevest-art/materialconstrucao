@@ -3,7 +3,9 @@ import { cn } from '@/lib/utils';
 
 export function Table({ className, ...props }: ComponentProps<'table'>) {
   return (
-    <div className="w-full overflow-x-auto">
+    // relative: o texto para leitor de tela (sr-only, posição absoluta) dos cabeçalhos fica
+    // preso a esta caixa que rola de lado, em vez de alargar a página no celular.
+    <div className="relative w-full overflow-x-auto">
       <table className={cn('w-full caption-bottom border-collapse text-sm', className)} {...props} />
     </div>
   );

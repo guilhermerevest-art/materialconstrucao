@@ -41,7 +41,9 @@ export function DashboardPage() {
   const firstName = user.name.split(/\s+/)[0];
 
   return (
-    <div className="grid gap-6">
+    // grid-cols-1 (minmax(0, 1fr)): sem isso a coluna cresce até a largura da tabela de
+    // lojas e a página passa da tela no celular.
+    <div className="grid grid-cols-1 gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground first-letter:uppercase">{today}</p>

@@ -82,10 +82,14 @@ npm run db:seed -- --demo --email admin@demo.local --password admin1234
 npm run dev                     # API em :3000, app em http://localhost:5173
 ```
 
-O `--demo` cria duas lojas, um catálogo de exemplo e dois vendedores
-(`carlos@demo.local` na Loja Centro e `joana@demo.local` na Loja Jardim, senha `demo1234`).
-Ele não cria clientes, para nenhum teste mandar WhatsApp a um número real por engano.
+Entre com a lojamestre `default`, usuário `admin` e senha `admin1234`. O `--demo` cria duas lojas,
+um catálogo de exemplo e dois vendedores (`carlos` na Loja Centro e `joana` na Loja Jardim, senha
+`demo1234`). Ele não cria clientes, para nenhum teste mandar WhatsApp a um número real por engano.
 **Não use `--demo` em produção.**
+
+O seed também cria outra lojamestre direto pelo terminal (o caminho normal é o painel `/super`):
+`npm run db:seed -- --tenant loja-do-joao --tenant-name "Loja do João" --username joao`.
+Rodar de novo não duplica nada.
 
 ### Testes
 
@@ -203,6 +207,9 @@ Rodam da sua máquina, apontando para a VPS:
 DATABASE_URL='postgresql://...?sslmode=require' npm run db:migrate
 DATABASE_URL='postgresql://...?sslmode=require' npm run db:seed -- --email voce@empresa.com.br --name "Seu Nome"
 ```
+
+O admin fica na lojamestre `default` (troque com `--tenant`), e o usuário de login é a parte do
+e-mail antes do `@` (ou `--username`).
 
 Sem `--password`, o seed gera uma senha e mostra no terminal. Troque-a em
 "Alterar senha" depois do primeiro acesso.
