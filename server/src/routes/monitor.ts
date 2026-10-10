@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { currentUser } from '../auth.js';
+import { currentUser, keepMonitorSession } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { optionalQueryId } from '../lib/validation.js';
@@ -9,6 +9,8 @@ import { canMoveFrom, userSectorIds } from '../workflow/queries.js';
 const monitorSchema = z.object({
   sector_id: optionalQueryId,
   store_id: optionalQueryId,
+  // "Manter conectado" ligado no aparelho: a TV do setor não cai a cada 12 horas.
+  keep: z.enum(['1']).optional(),
 });
 
 // Um monitor com mais que isso numa tela não serve para ninguém; o limite só
@@ -52,6 +54,7 @@ export function monitorRouter(ctx: AppContext) {
     const query = monitorSchema.parse(req.query);
     const storeId = user.role === 'admin' ? (query.store_id ?? null) : user.store_id;
     const sectorId = query.sector_id ?? null;
+    if (query.keep) keepMonitorSession(req, res, ctx.config);
 
     const result = await withSession(ctx.pool, user, async (db) => {
       const sectors = await userSectorIds(db, user.id);

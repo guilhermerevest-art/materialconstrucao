@@ -167,7 +167,14 @@ para cada tipo de entrega, para ajustar depois.
 setor da pessoa) e, para o admin, por loja. Etapas com o mesmo nome nos fluxos de retirada e de entrega
 viram uma coluna só. Atualiza sozinho a cada 10 segundos (a API é serverless na Vercel, então é consulta
 periódica e não WebSocket). **Modo TV** abre o quadro em tela cheia com letras maiores; **Som** toca um bipe
-quando chega pedido novo no quadro. O login da TV segue a regra das outras sessões e expira em 12 horas.
+quando chega pedido novo no quadro.
+
+**Manter conectado** (marque uma vez em cada TV): com a opção ligada, o monitor renova a sessão enquanto
+está aberto, e a TV não cai a cada 12 horas como as outras sessões. Se o aparelho ficar desligado, a sessão
+aguenta 30 dias. Sem a opção, vale a regra normal de 12 horas, para o computador do balcão que só deu uma
+olhada no monitor não ficar conectado por um mês. Desativar o usuário ou trocar a senha dele desconecta a TV
+na hora. Para as TVs, prefira um usuário próprio por setor (ex.: `tv.separacao`, vendedor da loja, só com o
+setor Separação), em vez do login de uma pessoa ou do administrador.
 
 ## Banco na VPS
 

@@ -11,6 +11,14 @@ import { HttpError } from './errors.js';
 export const SESSION_COOKIE = 'oms_session';
 export const SUPER_SESSION_COOKIE = 'oms_super_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
+/**
+ * Sessão do aparelho que fica com o monitor aberto (a TV do setor). O monitor renova
+ * a sessão enquanto consulta, então ela só expira se o aparelho ficar 30 dias sem abrir
+ * o monitor. Desativar o usuário ou trocar a senha derruba esta sessão como as outras.
+ */
+export const MONITOR_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+// O monitor consulta a cada 10 s; renovar o cookie uma vez por hora já basta.
+const MONITOR_RENEW_EVERY_SECONDS = 60 * 60;
 const BCRYPT_ROUNDS = 10;
 // Os dois cookies são assinados com o mesmo segredo. O "aud" impede que a sessão
 // de um usuário de lojamestre seja aceita como sessão de super admin (e vice-versa).
@@ -80,17 +88,18 @@ function issueCookie(
   subject: string,
   claims: Record<string, number>,
   secure: boolean,
+  ttlSeconds = SESSION_TTL_SECONDS,
 ) {
   const token = jwt.sign(claims, secret, {
     subject,
     audience,
-    expiresIn: SESSION_TTL_SECONDS,
+    expiresIn: ttlSeconds,
   });
   res.cookie(name, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure,
-    maxAge: SESSION_TTL_SECONDS * 1000,
+    maxAge: ttlSeconds * 1000,
     path: '/',
   });
 }
@@ -99,10 +108,19 @@ export function issueSession(
   res: Response,
   config: Config,
   user: { id: number; tenant_id: number; token_version: number },
+  ttlSeconds = SESSION_TTL_SECONDS,
 ) {
   // tid: a lojamestre do usuário, para a sessão ser lida já no contexto de RLS dela.
   const claims = { tv: user.token_version, tid: user.tenant_id };
-  issueCookie(res, SESSION_COOKIE, config.jwtSecret, USER_AUDIENCE, String(user.id), claims, config.cookieSecure);
+  issueCookie(res, SESSION_COOKIE, config.jwtSecret, USER_AUDIENCE, String(user.id), claims, config.cookieSecure, ttlSeconds);
+}
+
+/** Estende a sessão para a duração de monitor, no máximo uma vez por hora. Chamar depois do authenticate. */
+export function keepMonitorSession(req: Request, res: Response, config: Config) {
+  const user = currentUser(req);
+  const remaining = (req.sessionExpiresAt ?? 0) - Math.floor(Date.now() / 1000);
+  if (remaining > MONITOR_SESSION_TTL_SECONDS - MONITOR_RENEW_EVERY_SECONDS) return;
+  issueSession(res, config, user, MONITOR_SESSION_TTL_SECONDS);
 }
 
 export function issueSuperSession(res: Response, config: Config, sa: { id: number; token_version: number }) {
@@ -144,6 +162,7 @@ export function authenticate(ctx: AppContext): RequestHandler {
     }
 
     req.user = user;
+    req.sessionExpiresAt = payload.exp;
     next();
   };
 }

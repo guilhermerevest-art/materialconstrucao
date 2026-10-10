@@ -383,6 +383,32 @@ describeDb('fluxo do pedido', () => {
     expect(adminStoreB.body.orders).toEqual([]);
   });
 
+  it('"manter conectado" no monitor estende a sessão para 30 dias, renovando no máximo uma vez por hora', async () => {
+    const seller = await login(app, 'vendedor.a');
+    const plain = await seller.get('/api/monitor');
+    expect(plain.status).toBe(200);
+    expect(plain.headers['set-cookie']).toBeUndefined();
+
+    const kept = await seller.get('/api/monitor?keep=1');
+    expect(kept.status).toBe(200);
+    expect(kept.headers['set-cookie']?.[0]).toMatch(/oms_session=.*Max-Age=2592000.*HttpOnly/);
+    // Com a sessão recém-renovada, as próximas consultas não mandam cookie novo.
+    const again = await seller.get('/api/monitor?keep=1');
+    expect(again.headers['set-cookie']).toBeUndefined();
+    expect((await seller.get('/api/auth/me')).status).toBe(200);
+
+    // Desativar o usuário derruba a sessão longa como qualquer outra.
+    const admin = await login(app, 'admin');
+    await admin.put(`/api/users/${f.sellerAId}`).send({
+      name: 'Vendedor A',
+      username: 'vendedor.a',
+      role: 'seller',
+      store_id: f.storeA,
+      active: false,
+    });
+    expect((await seller.get('/api/monitor?keep=1')).status).toBe(401);
+  });
+
   it('setores: cadastro, uso e exclusão', async () => {
     const admin = await login(app, 'admin');
     const created = await admin.post('/api/sectors').send({ name: 'Separação' });

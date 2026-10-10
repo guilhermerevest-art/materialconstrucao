@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { EmptyState, PageHeader } from '@/components/shared';
 import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/input';
+import { Checkbox, NativeSelect } from '@/components/ui/input';
 import { Badge, Skeleton } from '@/components/ui/misc';
 import { api, ApiError, toQuery } from '@/lib/api';
 import { useUser } from '@/lib/auth';
@@ -20,6 +20,7 @@ const REFRESH_MS = 10_000;
 
 const SECTOR_KEY = 'monitor:setor';
 const SOUND_KEY = 'monitor:som';
+const KEEP_KEY = 'monitor:manter-conectado';
 
 function readStorage(key: string): string | null {
   try {
@@ -148,6 +149,8 @@ export function MonitorPage() {
   const [sector, setSector] = useState<string | null>(() => readStorage(SECTOR_KEY));
   const [storeId, setStoreId] = useState('');
   const [sound, setSound] = useState(() => readStorage(SOUND_KEY) === '1');
+  // Ligado na TV do setor: o monitor renova a sessão e o aparelho não cai a cada 12 horas.
+  const [keep, setKeep] = useState(() => readStorage(KEEP_KEY) === '1');
   const [tv, setTv] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [movingId, setMovingId] = useState<number | null>(null);
@@ -164,9 +167,9 @@ export function MonitorPage() {
   });
 
   const monitor = useQuery({
-    queryKey: ['monitor', sector ?? '', storeId],
+    queryKey: ['monitor', sector ?? '', storeId, keep],
     queryFn: async () => {
-      const data = await api<Monitor>(`/monitor${toQuery({ sector_id: sector ?? '', store_id: storeId })}`);
+      const data = await api<Monitor>(`/monitor${toQuery({ sector_id: sector ?? '', store_id: storeId, keep: keep ? 1 : '' })}`);
       // Diferença entre o relógio do servidor e o desta tela, para o tempo na etapa não depender da TV.
       return { ...data, skew: new Date(data.now).getTime() - Date.now() };
     },
@@ -278,6 +281,19 @@ export function MonitorPage() {
           ))}
         </NativeSelect>
       )}
+      <label
+        className="flex h-10 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm font-semibold"
+        title="Para a TV do setor: este aparelho continua conectado enquanto o monitor estiver aberto, sem cair a cada 12 horas."
+      >
+        <Checkbox
+          checked={keep}
+          onChange={(e) => {
+            setKeep(e.target.checked);
+            writeStorage(KEEP_KEY, e.target.checked ? '1' : '0');
+          }}
+        />
+        Manter conectado
+      </label>
       <Button variant="outline" onClick={toggleSound} aria-pressed={sound}>
         {sound ? <Bell /> : <BellOff />}
         {sound ? 'Som ligado' : 'Som desligado'}
@@ -368,7 +384,7 @@ export function MonitorPage() {
                     />
                   ))
                 ) : (
-                  <p className="px-2 py-6 text-center text-[13px] text-muted-foreground">Nenhum pedido aqui.</p>
+                  <p className="col-span-full px-2 py-6 text-center text-[13px] text-muted-foreground">Nenhum pedido aqui.</p>
                 )}
               </div>
             </section>
