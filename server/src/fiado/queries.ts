@@ -321,3 +321,21 @@ export async function reverseFiadoPayment(db: pg.PoolClient, entryId: number, us
     [entryId, user.id, reason],
   );
 }
+
+/**
+ * Compras do fiado ainda em aberto, abatendo os pagamentos das mais antigas (FIFO):
+ * define `fiado_open_debits(client_id, due_date, remaining)` para usar num WITH.
+ */
+export const FIADO_OPEN_DEBITS_CTE = `fiado_e as (
+    select client_id, id, amount, due_date from fiado_entries where cancelled_at is null
+  ), fiado_totals as (
+    select client_id, coalesce(-sum(amount) filter (where amount < 0), 0) as credits from fiado_e group by client_id
+  ), fiado_deb as (
+    select e.client_id, e.due_date, e.amount,
+           sum(e.amount) over (partition by e.client_id order by e.due_date, e.id) as cum
+      from fiado_e e where e.amount > 0
+  ), fiado_open_debits as (
+    select d.client_id, d.due_date, least(d.amount, d.cum - t.credits) as remaining
+      from fiado_deb d join fiado_totals t using (client_id)
+     where d.cum > t.credits
+  )`;

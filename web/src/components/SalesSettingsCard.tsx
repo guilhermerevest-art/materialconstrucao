@@ -22,12 +22,14 @@ export function SalesSettingsCard() {
   });
   const [discount, setDiscount] = useState('');
   const [markup, setMarkup] = useState('');
+  const [commission, setCommission] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!query.data) return;
     setDiscount(toText(query.data.max_discount_percent));
     setMarkup(toText(query.data.default_markup_percent));
+    setCommission(toText(query.data.default_commission_percent ?? null));
   }, [query.data]);
 
   const save = useMutation({
@@ -46,8 +48,12 @@ export function SalesSettingsCard() {
     const defaultMarkup = markup.trim() ? parseDecimal(markup) : null;
     if (discount.trim() && (maxDiscount === null || maxDiscount < 0 || maxDiscount > 100)) return setError('Desconto máximo de 0 a 100%.');
     if (markup.trim() && (defaultMarkup === null || defaultMarkup < 0)) return setError('Margem inválida. Exemplo: 35');
+    const defaultCommission = commission.trim() ? parseDecimal(commission) : null;
+    if (commission.trim() && (defaultCommission === null || defaultCommission < 0 || defaultCommission > 100)) {
+      return setError('Comissão de 0 a 100%.');
+    }
     setError(null);
-    save.mutate({ max_discount_percent: maxDiscount, default_markup_percent: defaultMarkup });
+    save.mutate({ max_discount_percent: maxDiscount, default_markup_percent: defaultMarkup, default_commission_percent: defaultCommission });
   }
 
   return (
@@ -57,7 +63,9 @@ export function SalesSettingsCard() {
           <BadgePercent className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
           <div className="grid gap-0.5">
             <CardTitle>Vendas</CardTitle>
-            <CardDescription>Padrões da loja. Cada vendedor pode ter o próprio limite em Administração → Vendedores.</CardDescription>
+            <CardDescription>
+              Padrões da loja. Cada vendedor pode ter o próprio limite e a própria comissão em Administração → Vendedores.
+            </CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -81,6 +89,13 @@ export function SalesSettingsCard() {
                 hint="Sugere o preço na entrada de nota e no reajuste por margem. Cada produto pode ter a sua."
               >
                 <Input id="vendas-margem" inputMode="decimal" value={markup} onChange={(e) => setMarkup(e.target.value)} className="text-right tabular-nums" />
+              </Field>
+              <Field
+                label="Comissão padrão (%)"
+                htmlFor="vendas-comissao"
+                hint="Sobre a venda confirmada, menos devoluções. Em branco, sem comissão. Veja em Relatórios → Comissão."
+              >
+                <Input id="vendas-comissao" inputMode="decimal" value={commission} onChange={(e) => setCommission(e.target.value)} className="text-right tabular-nums" />
               </Field>
             </div>
             <Button type="submit" className="justify-self-start" loading={save.isPending}>

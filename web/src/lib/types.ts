@@ -25,6 +25,8 @@ export type ManagedUser = User & {
   max_discount_percent: number | null;
   /** Libera, com a própria senha, desconto acima do limite de quem vende. */
   can_approve_discounts: boolean;
+  /** Comissão própria sobre a venda confirmada (nulo = o padrão da loja). */
+  commission_percent: number | null;
 };
 
 export type Store = {
@@ -456,7 +458,23 @@ export type Dashboard = {
   by_store: { id: number; name: string; orders_today: number; orders_today_amount: number; quotes_today: number }[];
 };
 
-export type ReportType = 'dias' | 'lojas' | 'vendedores' | 'produtos' | 'clientes' | 'formas-de-pagamento';
+export type ReportType =
+  | 'dias'
+  | 'lojas'
+  | 'vendedores'
+  | 'produtos'
+  | 'clientes'
+  | 'formas-de-pagamento'
+  | 'comissao'
+  | 'conversao'
+  | 'devolucoes'
+  | 'curva-abc'
+  | 'estoque-parado'
+  | 'estoque-valorizado'
+  | 'margem'
+  | 'compras'
+  | 'inadimplencia'
+  | 'fluxo-de-caixa';
 
 export type ReportTotals = { count: number; total_amount: number; discount_amount: number; average_amount: number };
 
@@ -474,9 +492,14 @@ export type ReportRow = {
   total_amount: number;
   discount_amount?: number;
   average_amount?: number;
+  /** Colunas dos relatórios de formato próprio (comissão, estoque, financeiro...). */
+  [key: string]: unknown;
 };
 
-export type Report = { rows: ReportRow[]; totals: ReportTotals };
+export type ReportMetric = { label: string; value: number; format: 'money' | 'number' | 'percent' };
+
+/** Relatório de pedidos agrupados (totals) ou de formato próprio (metrics). */
+export type Report = { rows: ReportRow[]; totals?: ReportTotals; metrics?: ReportMetric[] };
 
 export type FiscalEnvironment = 'homologacao' | 'producao';
 
@@ -879,7 +902,12 @@ export type PriceAdjustResult = {
   applied: boolean;
 };
 
-export type SalesSettings = { max_discount_percent: number | null; default_markup_percent: number | null };
+export type SalesSettings = {
+  max_discount_percent: number | null;
+  default_markup_percent: number | null;
+  /** Comissão padrão sobre a venda confirmada (nulo = sem comissão). */
+  default_commission_percent?: number | null;
+};
 
 export type FiadoSettings = {
   enabled: boolean;

@@ -64,6 +64,8 @@ const adjustSchema = z
 const salesSettingsSchema = z.object({
   max_discount_percent: percent('o desconto máximo', 0, 100).nullable(),
   default_markup_percent: percent('a margem padrão', 0, 10_000).nullable(),
+  // Ausente mantém (telas antigas não mandam).
+  default_commission_percent: percent('a comissão padrão', 0, 100).nullable().optional(),
 });
 
 /** Arredonda para cima no múltiplo escolhido (preço de prateleira: 12,37 → 12,40). */
@@ -292,8 +294,12 @@ export function pricingRouter(ctx: AppContext) {
   // ---- Padrão da loja
 
   router.get('/sales-settings', requireAdmin, async (req, res) => {
-    const { rows } = await queryAs(pool, currentUser(req), 'select max_discount_percent, default_markup_percent from settings limit 1');
-    res.json({ settings: rows[0] ?? { max_discount_percent: null, default_markup_percent: null } });
+    const { rows } = await queryAs(
+      pool,
+      currentUser(req),
+      'select max_discount_percent, default_markup_percent, default_commission_percent from settings limit 1',
+    );
+    res.json({ settings: rows[0] ?? { max_discount_percent: null, default_markup_percent: null, default_commission_percent: null } });
   });
 
   router.put('/sales-settings', requireAdmin, async (req, res) => {
@@ -302,13 +308,22 @@ export function pricingRouter(ctx: AppContext) {
     const { rows } = await queryAs(
       pool,
       me,
-      `insert into settings (tenant_id, max_discount_percent, default_markup_percent) values ($1, $2, $3)
+      `insert into settings (tenant_id, max_discount_percent, default_markup_percent, default_commission_percent)
+       values ($1, $2, $3, $5)
        on conflict (tenant_id) do update
           set max_discount_percent = excluded.max_discount_percent,
               default_markup_percent = excluded.default_markup_percent,
+              default_commission_percent = case when $4 then excluded.default_commission_percent
+                                                else settings.default_commission_percent end,
               updated_at = now()
-       returning max_discount_percent, default_markup_percent`,
-      [me.tenant_id, body.max_discount_percent, body.default_markup_percent],
+       returning max_discount_percent, default_markup_percent, default_commission_percent`,
+      [
+        me.tenant_id,
+        body.max_discount_percent,
+        body.default_markup_percent,
+        body.default_commission_percent !== undefined,
+        body.default_commission_percent ?? null,
+      ],
     );
     res.json({ settings: rows[0] });
   });

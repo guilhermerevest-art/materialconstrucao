@@ -176,6 +176,23 @@ Tudo opcional: sem tabela, faixa ou limite configurado, o pedido usa o preço do
 - **Histórico de preço** no produto: toda mudança, por qualquer caminho, com motivo, quem e quando.
 - A venda guarda o custo de cada item na confirmação, para os relatórios de margem.
 
+## Comissão e relatórios
+
+- **Comissão:** percentual padrão em Configurações → Vendas e, se quiser, um próprio por vendedor
+  (Administração → Vendedores). Base: venda confirmada no período menos as devoluções do período dos pedidos
+  do vendedor; pedido cancelado não conta. Sem percentual configurado, não há comissão (o relatório mostra só
+  as vendas). O vendedor vê só a própria comissão.
+- **Relatórios** (menu Relatórios), em três áreas, todos com exportação para CSV (abre direto no Excel):
+  - **Vendas:** por dia, loja, vendedor, produto, cliente e forma de pagamento (pedidos ou orçamentos);
+    **conversão de orçamentos** (feitos, viraram pedido, perdidos, em aberto, taxa e dias até fechar, por
+    vendedor); **comissão**; **devoluções** por produto (com o que voltou avariado).
+  - **Estoque e compras:** **curva ABC** do período com giro e cobertura em dias; **estoque parado** (com saldo
+    e sem venda há 30 a 365 dias, ou nunca vendido) com o valor parado a custo; **estoque valorizado** a custo
+    e a preço; **margem** por produto (venda líquida menos o custo gravado na venda); **compras** por fornecedor.
+  - **Financeiro:** **inadimplência** de hoje (parcelas e fiado vencidos por faixa: até 30, 31–60, 61–90 e mais
+    de 90 dias) e **fluxo de caixa** por dia (entrou, saiu, saldo, vence a receber e a pagar).
+- Estoque valorizado, margem, compras e fluxo de caixa são do administrador; o vendedor vê os da própria loja.
+
 ## Estoque
 
 Saldo por loja (não há depósito central), no menu **Estoque**. Todo mundo consulta, inclusive o saldo das

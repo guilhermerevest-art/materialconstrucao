@@ -37,6 +37,8 @@ const userFields = {
   // Ausentes mantêm o que está salvo.
   max_discount_percent: z.number('Desconto máximo inválido.').min(0, 'Use de 0 a 100%.').max(100, 'Use de 0 a 100%.').nullable().optional(),
   can_approve_discounts: z.boolean().optional(),
+  // Comissão sobre a venda confirmada (nulo = o padrão da loja). Ausente mantém.
+  commission_percent: z.number('Comissão inválida.').min(0, 'Use de 0 a 100%.').max(100, 'Use de 0 a 100%.').nullable().optional(),
 };
 
 const sellerNeedsStore = (u: { role: string; store_id: number | null }) => u.role === 'admin' || u.store_id !== null;
@@ -54,7 +56,7 @@ const updateSchema = z
   .refine(sellerNeedsStore, SELLER_NEEDS_STORE);
 
 const USER_COLUMNS = `u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id, s.name as store_name, u.active, u.created_at,
-  u.max_discount_percent, u.can_approve_discounts,
+  u.max_discount_percent, u.can_approve_discounts, u.commission_percent,
   coalesce((select array_agg(us.sector_id::int order by us.sector_id) from user_sectors us where us.user_id = u.id), '{}') as sector_ids`;
 
 /** Troca os setores do usuário. Roda na mesma transação que salva o usuário. */
@@ -71,14 +73,22 @@ async function saveUserSectors(db: pg.PoolClient, tenantId: number, userId: numb
 async function saveSalesFields(
   db: pg.PoolClient,
   id: number,
-  body: { max_discount_percent?: number | null; can_approve_discounts?: boolean },
+  body: { max_discount_percent?: number | null; can_approve_discounts?: boolean; commission_percent?: number | null },
 ) {
   await db.query(
     `update users
         set max_discount_percent = case when $2 then $3 else max_discount_percent end,
-            can_approve_discounts = coalesce($4, can_approve_discounts)
+            can_approve_discounts = coalesce($4, can_approve_discounts),
+            commission_percent = case when $5 then $6 else commission_percent end
       where id = $1`,
-    [id, body.max_discount_percent !== undefined, body.max_discount_percent ?? null, body.can_approve_discounts ?? null],
+    [
+      id,
+      body.max_discount_percent !== undefined,
+      body.max_discount_percent ?? null,
+      body.can_approve_discounts ?? null,
+      body.commission_percent !== undefined,
+      body.commission_percent === null || body.commission_percent === undefined ? null : Math.round(body.commission_percent * 100) / 100,
+    ],
   );
 }
 

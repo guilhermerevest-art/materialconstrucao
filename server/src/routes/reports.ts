@@ -4,7 +4,9 @@ import { currentUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
+import { todayIn } from '../lib/format.js';
 import { optionalQueryId } from '../lib/validation.js';
+import { EXTRA_REPORTS } from '../reports/extra.js';
 
 const dateParam = z.preprocess(
   (v) => (v === '' ? undefined : v),
@@ -20,6 +22,8 @@ const querySchema = z.object({
   store_id: optionalQueryId,
   // Pedidos contam pela data de confirmação; orçamentos, pela de criação.
   status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order']).default('order')),
+  // Estoque parado: dias sem venda.
+  dias: z.coerce.number().int().min(7).max(3650).default(90),
 });
 
 /**
@@ -65,6 +69,9 @@ const GROUPED = {
 type ReportType = keyof typeof GROUPED | 'produtos';
 const REPORT_TYPES = [...Object.keys(GROUPED), 'produtos'] as ReportType[];
 
+/** Primeiro dia do mês de "2026-10-10". */
+const monthStart = (day: string) => `${day.slice(0, 8)}01`;
+
 /**
  * Relatórios por período. Tudo passa por withSession, então o RLS restringe o
  * vendedor à própria loja; o filtro de loja abaixo só deixa isso explícito.
@@ -75,11 +82,31 @@ export function reportsRouter(ctx: AppContext) {
 
   router.get('/:type', async (req, res) => {
     const type = req.params.type as ReportType;
-    if (!REPORT_TYPES.includes(type)) throw new HttpError(404, 'Relatório não encontrado.');
+    const extra = EXTRA_REPORTS[req.params.type];
+    if (!REPORT_TYPES.includes(type) && !extra) throw new HttpError(404, 'Relatório não encontrado.');
     const user = currentUser(req);
     const query = querySchema.parse(req.query);
     if (query.from && query.to && query.from > query.to) {
       throw new HttpError(400, 'A data inicial precisa ser antes da final.');
+    }
+
+    // Relatórios com formato próprio (comissão, estoque, financeiro...): linhas e os números de destaque.
+    if (extra) {
+      const today = todayIn(config.timeZone);
+      const data = await withSession(pool, user, (db) =>
+        extra({
+          db,
+          user,
+          from: query.from ?? monthStart(today),
+          to: query.to ?? today,
+          storeId: user.role === 'seller' ? user.store_id : (query.store_id ?? null),
+          timeZone: config.timeZone,
+          today,
+          days: query.dias,
+        }),
+      );
+      res.json(data);
+      return;
     }
 
     const params: unknown[] = [];
