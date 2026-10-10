@@ -112,6 +112,16 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 | Esc | Cancela o produto escolhido |
 | F9 ou Ctrl+Enter | Salvar |
 
+## Implantação
+
+**Administração → Implantação** (e um aviso no início do admin enquanto falta algo) mostra, área por área, o
+que já está configurado e leva direto à tela de cada passo. Tudo é lido do cadastro, sem marcar nada à mão:
+lojas, vendedores, produtos e formas de pagamento (o essencial); WhatsApp; estoque inicial, mínimos e
+fornecedores; fluxo de pedidos, setores e veículos; nota fiscal (empresa, conta da ACBr API, certificado com o
+aviso de vencimento, NCM dos produtos, nota de teste em homologação e produção); financeiro e PIX; fiado; preço
+e comissão. Os módulos desligados e os passos opcionais não contam no progresso. O certificado e as senhas
+continuam com a loja: a tela só diz se já foram informados.
+
 ## Regras de negócio
 
 - **Vendedor** vê e edita os pedidos da própria loja; só lança pedidos em seu nome e na sua loja.

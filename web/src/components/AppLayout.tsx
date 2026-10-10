@@ -53,6 +53,7 @@ const NAV: (NavItem | NavGroup)[] = [
     label: 'Administração',
     adminOnly: true,
     items: [
+      { to: '/implantacao', label: 'Implantação' },
       { to: '/lojas', label: 'Lojas' },
       { to: '/vendedores', label: 'Vendedores' },
       { to: '/formas-de-pagamento', label: 'Formas de pagamento' },

@@ -28,6 +28,7 @@ import { PurchasesPage } from './pages/purchases/PurchasesPage';
 import { ReceivablesPage } from './pages/ReceivablesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SetupPage } from './pages/SetupPage';
 import { StockEntryPage } from './pages/StockEntryPage';
 import { StockPage } from './pages/StockPage';
 import { StoresPage } from './pages/StoresPage';
@@ -132,6 +133,7 @@ export const router = createBrowserRouter([
           { path: 'compras/:id/editar', element: <PurchaseOrderEditorPage /> },
           { path: 'contas-a-pagar', element: <PayablesPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
+          { path: 'implantacao', element: <SetupPage /> },
         ],
       },
       { path: '*', element: <NotFoundPage /> },

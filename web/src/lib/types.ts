@@ -1130,3 +1130,22 @@ export type PayablePayment = {
 };
 
 export type PayablesSummary = { overdue: number; today: number; next_7_days: number; next_30_days: number; open_total: number };
+
+export type SetupStep = {
+  key: string;
+  title: string;
+  description: string;
+  status: 'done' | 'todo' | 'warning';
+  optional: boolean;
+  detail: string | null;
+  link: string;
+  action: string;
+};
+
+export type SetupArea = {
+  key: string;
+  title: string;
+  description: string;
+  module: { enabled: boolean; link: string } | null;
+  steps: SetupStep[];
+};

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CheckCheck, MessageCircleReply, Plus } from 'lucide-react';
+import { ArrowRight, CheckCheck, ListChecks, MessageCircleReply, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EmptyState, StatusBadge } from '@/components/shared';
@@ -12,6 +12,7 @@ import { useUser } from '@/lib/auth';
 import { formatDateTime, formatMoney, formatOrderNumber } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
 import type { Dashboard } from '@/lib/types';
+import { requiredSteps, useSetup } from './SetupPage';
 import { cn } from '@/lib/utils';
 
 const today = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
@@ -23,6 +24,30 @@ function Metric({ label, value, detail, className }: { label: string; value: Rea
       <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums">{value}</p>
       {detail && <p className="mt-0.5 text-sm font-medium text-muted-foreground tabular-nums">{detail}</p>}
     </div>
+  );
+}
+
+/** Enquanto a implantação tem passo obrigatório pendente, o admin vê quanto falta. */
+function SetupBanner() {
+  const setup = useSetup();
+  if (!setup.data) return null;
+  const required = requiredSteps(setup.data);
+  const missing = required.filter((s) => s.status !== 'done').length;
+  if (!missing) return null;
+  return (
+    <Link
+      to="/implantacao"
+      className="flex items-center gap-3 rounded-lg border border-border bg-card px-5 py-3 hover:border-primary/50"
+    >
+      <ListChecks className="size-5 shrink-0 text-primary" aria-hidden />
+      <span className="min-w-0 flex-1 text-sm">
+        <strong className="font-semibold">
+          Implantação: {missing === 1 ? 'falta 1 passo' : `faltam ${missing} passos`}
+        </strong>
+        <span className="text-muted-foreground"> · {required.length - missing} de {required.length} prontos</span>
+      </span>
+      <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
   );
 }
 
@@ -119,6 +144,8 @@ export function DashboardPage() {
           <ArrowRight className="size-4 shrink-0" aria-hidden />
         </Link>
       )}
+
+      {isAdmin && <SetupBanner />}
 
       {isAdmin && data && data.by_store.length > 0 && (
         <Card>
