@@ -5,12 +5,29 @@ import { currentUser, requireAdmin, type AuthUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
-import { describeEvolutionError, keySourceOf, loadEvolutionSettings, sendPdfDocument } from '../lib/evolution.js';
+import {
+  describeEvolutionError,
+  keySourceOf,
+  loadEvolutionSettings,
+  sendPdfDocument,
+  sendTextMessage,
+} from '../lib/evolution.js';
 import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
-import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+import { orderFileName, renderOrderPdf, type OrderPdfPix } from '../pdf/orderPdf.js';
+import { loadFinanceSettings, orderOpenAmount } from '../finance/queries.js';
+import { pixPayload, pixQrPng } from '../finance/pix.js';
+import { completeRemaining } from '../deliveries/queries.js';
+import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
+import { assertClientSite } from './clientSites.js';
+import {
+  loadOrderWorkflow,
+  moveOrderStage,
+  renderStageMessage,
+  type EnteredStage,
+} from '../workflow/queries.js';
 
 const itemSchema = z.object({
   product_id: z.number().int().positive(),
@@ -27,6 +44,8 @@ const orderSchema = z.object({
   store_id: z.number().int().positive().nullable().optional(),
   payment_method_id: z.number().int().positive().nullable().default(null),
   delivery_address: optionalText(300),
+  // Obra do cliente escolhida no PDV; o endereço de entrega continua sendo o texto acima.
+  client_site_id: z.number().int().positive().nullable().default(null),
   discount_type: z.enum(['percent', 'amount'], 'Tipo de desconto inválido.').nullable().default(null),
   discount_value: z
     .number('Informe o valor do desconto.')
@@ -60,7 +79,7 @@ const dateParam = z.preprocess(
 );
 
 const listSchema = z.object({
-  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order']).optional()),
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order', 'cancelled']).optional()),
   from: dateParam,
   to: dateParam,
   q: optionalQuery,
@@ -69,7 +88,48 @@ const listSchema = z.object({
   ...pagination,
 });
 
+const cancelSchema = z.object({
+  reason: z.string('Informe o motivo.').trim().min(3, 'Informe o motivo.').max(300, 'Use no máximo 300 caracteres.'),
+});
+
+const moveSchema = z.object({
+  direction: z.enum(['next', 'previous'], 'Direção inválida.'),
+  expected_stage_id: z.number().int().positive(),
+  note: optionalText(300),
+});
+
 const NOT_FOUND = 'Pedido não encontrado.';
+
+/** Aviso ao cliente quando o pedido entra numa etapa com mensagem. Falhar não desfaz a mudança de etapa. */
+type StageNotification = { status: 'sent' } | { status: 'failed'; error: string };
+
+/** Pedido como a tela mostra: com a etapa do fluxo e o histórico. O PDF não precisa disso. */
+async function loadOrderView(db: pg.PoolClient, id: number, user: AuthUser) {
+  const order = await loadOrderDetail(db, id);
+  if (!order) return null;
+  return { ...order, workflow: await loadOrderWorkflow(db, id, user) };
+}
+
+/**
+ * PIX do PDF: só para pedido (não orçamento) com a forma PIX e a chave da loja
+ * configurada. O valor é o que falta receber.
+ */
+async function orderPix(db: pg.PoolClient, order: OrderDetail): Promise<OrderPdfPix | null> {
+  if (order.status !== 'order' || !order.payment_method_id) return null;
+  const { rows } = await db.query<{ kind: string }>('select kind from payment_methods where id = $1', [order.payment_method_id]);
+  if (rows[0]?.kind !== 'pix') return null;
+  const { pix } = await loadFinanceSettings(db);
+  if (!pix) return null;
+  const amount = await orderOpenAmount(db, order.id, order.total_amount);
+  if (amount <= 0) return null;
+  const payload = pixPayload({ ...pix, amount, txid: `PED${formatOrderNumber(order.id)}` });
+  return { amount, payload, png: await pixQrPng(payload) };
+}
+
+/** WhatsApp do cliente pronto para a EvolutionAPI. Só números antigos ou importados precisam de ajuste. */
+export function clientNumber(order: Pick<OrderDetail, 'client_whatsapp'>) {
+  return /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
+}
 
 /** Admin escolhe a loja (padrão: a dele); vendedor sempre lança na própria loja. */
 function resolveStoreId(user: AuthUser, requested: number | null | undefined): number {
@@ -119,6 +179,29 @@ export function ordersRouter(ctx: AppContext) {
   const router = Router();
   const { pool, config } = ctx;
 
+  async function notifyStageEntry(user: AuthUser, order: OrderDetail, stage: EnteredStage): Promise<StageNotification | null> {
+    if (!stage.whatsapp_message) return null;
+    const settings = await withSession(pool, user, (db) => loadEvolutionSettings(db, user.tenant_id));
+    if (!settings) {
+      return { status: 'failed', error: 'O WhatsApp da loja não está configurado, então o cliente não foi avisado.' };
+    }
+    const number = clientNumber(order);
+    if (!number) return { status: 'failed', error: 'O WhatsApp do cliente é inválido, então ele não foi avisado.' };
+    const text = renderStageMessage(stage.whatsapp_message, {
+      clientName: order.client_name,
+      orderId: order.id,
+      storeName: order.store_name,
+      stageName: stage.name,
+    });
+    try {
+      await sendTextMessage(settings, { number, text }, config.evolutionTimeoutMs);
+      return { status: 'sent' };
+    } catch (err) {
+      console.error(`Falha ao avisar o cliente do pedido ${order.id} pela EvolutionAPI:`, err);
+      return { status: 'failed', error: describeEvolutionError(err, keySourceOf(settings, config.evolutionServer)) };
+    }
+  }
+
   router.get('/', async (req, res) => {
     const user = currentUser(req);
     const query = listSchema.parse(req.query);
@@ -146,14 +229,15 @@ export function ordersRouter(ctx: AppContext) {
     const offset = param((query.page - 1) * query.page_size);
     const items = await withSession(pool, user, async (db) => {
       const { rows } = await db.query(
-        `select o.id, o.status, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
+        `select o.id, o.status, o.cancelled_from, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
                 o.store_id, s.name as store_name, o.user_id, u.name as user_name,
-                o.client_id, c.name as client_name,
+                o.client_id, c.name as client_name, o.stage_id, ws.name as stage_name,
                 count(*) over () as total_count
            from orders o
            join clients c on c.id = o.client_id
            join stores s on s.id = o.store_id
            join users u on u.id = o.user_id
+           left join workflow_stages ws on ws.id = o.stage_id
           ${where.length ? `where ${where.join(' and ')}` : ''}
           order by o.created_at desc, o.id desc
           limit ${limit} offset ${offset}`,
@@ -172,7 +256,8 @@ export function ordersRouter(ctx: AppContext) {
 
   router.get('/:id', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    const user = currentUser(req);
+    const order = await withSession(pool, user, (db) => loadOrderView(db, id, user));
     if (!order) throw new HttpError(404, NOT_FOUND);
     res.json({ order });
   });
@@ -185,11 +270,12 @@ export function ordersRouter(ctx: AppContext) {
     const order = await withSession(pool, user, async (db) => {
       if (user.role === 'admin') await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      await assertClientSite(db, body.client_site_id, body.client_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id);
       const { rows } = await db.query<{ id: number }>(
         `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name,
-                             delivery_address, discount_type, discount_value, confirmed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, case when $5 = 'order' then now() end)
+                             delivery_address, discount_type, discount_value, client_site_id, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, case when $5 = 'order' then now() end)
          returning id`,
         [
           user.tenant_id,
@@ -203,11 +289,13 @@ export function ordersRouter(ctx: AppContext) {
           body.delivery_address,
           body.discount_type,
           body.discount_value,
+          body.client_site_id,
         ],
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
-      return loadOrderDetail(db, id);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
+      return loadOrderView(db, id, user);
     });
     res.status(201).json({ order });
   });
@@ -218,17 +306,24 @@ export function ordersRouter(ctx: AppContext) {
     const body = orderSchema.parse(req.body);
 
     const order = await withSession(pool, user, async (db) => {
-      const { rows } = await db.query<{ status: string; store_id: number; payment_method_id: number | null }>(
-        'select status, store_id, payment_method_id from orders where id = $1 for update',
+      const { rows } = await db.query<{
+        status: string;
+        store_id: number;
+        payment_method_id: number | null;
+        client_site_id: number | null;
+      }>(
+        'select status, store_id, payment_method_id, client_site_id from orders where id = $1 for update',
         [id],
       );
       const current = rows[0];
       if (!current) throw new HttpError(404, NOT_FOUND);
       if (current.status === 'order') throw new HttpError(409, 'Pedidos confirmados não podem ser editados.');
+      if (current.status === 'cancelled') throw new HttpError(409, 'Documentos cancelados não podem ser editados.');
 
       const storeId = user.role === 'admin' && body.store_id ? body.store_id : current.store_id;
       if (storeId !== current.store_id) await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      await assertClientSite(db, body.client_site_id, body.client_id, current.client_site_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id, current.payment_method_id);
 
       const previous = await db.query<{ product_id: number; unit_price: number }>(
@@ -239,7 +334,7 @@ export function ordersRouter(ctx: AppContext) {
         `update orders
             set client_id = $2, status = $3, notes = $4, store_id = $5,
                 payment_method_id = $6, payment_method_name = $7,
-                delivery_address = $8, discount_type = $9, discount_value = $10,
+                delivery_address = $8, discount_type = $9, discount_value = $10, client_site_id = $11,
                 confirmed_at = case when $3 = 'order' then now() end,
                 updated_at = now()
           where id = $1`,
@@ -254,46 +349,100 @@ export function ordersRouter(ctx: AppContext) {
           body.delivery_address,
           body.discount_type,
           body.discount_value,
+          body.client_site_id,
         ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
-      return loadOrderDetail(db, id);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
+      return loadOrderView(db, id, user);
     });
     res.json({ order });
   });
 
   router.post('/:id/convert', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), async (db) => {
+    const user = currentUser(req);
+    const order = await withSession(pool, user, async (db) => {
       const { rowCount } = await db.query(
         `update orders set status = 'order', confirmed_at = now(), updated_at = now()
           where id = $1 and status = 'quote'`,
         [id],
       );
       if (!rowCount) {
-        const exists = await db.query('select 1 from orders where id = $1', [id]);
-        if (!exists.rowCount) throw new HttpError(404, NOT_FOUND);
-        throw new HttpError(409, 'Este documento já é um pedido.');
+        const { rows } = await db.query<{ status: string }>('select status from orders where id = $1', [id]);
+        if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+        throw new HttpError(
+          409,
+          rows[0].status === 'cancelled' ? 'Orçamento perdido não pode ser convertido. Reabra-o antes.' : 'Este documento já é um pedido.',
+        );
       }
-      return loadOrderDetail(db, id);
+      await onOrderConfirmed(db, id, user, config.timeZone);
+      return loadOrderView(db, id, user);
     });
     res.json({ order });
   });
 
+  /** Cancela o pedido (só admin) ou marca o orçamento como perdido, com o motivo. */
+  router.post('/:id/cancel', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const { reason } = cancelSchema.parse(req.body);
+    const order = await withSession(pool, user, async (db) => {
+      await cancelOrder(db, id, user, reason);
+      return loadOrderView(db, id, user);
+    });
+    res.json({ order });
+  });
+
+  router.post('/:id/reopen', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, user, async (db) => {
+      await reopenQuote(db, id);
+      return loadOrderView(db, id, user);
+    });
+    res.json({ order });
+  });
+
+  /** Avança o pedido para a próxima etapa do fluxo ou devolve para a anterior. */
+  router.post('/:id/stage', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const body = moveSchema.parse(req.body);
+    const { order, entered } = await withSession(pool, user, async (db) => {
+      const entered = await moveOrderStage(db, id, user, body);
+      // Chegou em "Entregue"/"Retirado": o que faltava sair é registrado como entregue.
+      if (body.direction === 'next' && entered.is_final) await completeRemaining(db, id, user, entered.name);
+      return { order: (await loadOrderView(db, id, user))!, entered };
+    });
+    // Depois do commit: a mudança de etapa vale mesmo se o WhatsApp falhar.
+    const notification = body.direction === 'next' ? await notifyStageEntry(user, order, entered) : null;
+    res.json({ order, notification });
+  });
+
+  // Excluir apaga de vez, sem estornar nada: vale para orçamento e documento cancelado.
+  // Pedido confirmado é cancelado primeiro (o cancelamento devolve estoque e estorna o resto).
   router.delete('/:id', requireAdmin, async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rowCount } = await withSession(pool, currentUser(req), (db) =>
-      db.query('delete from orders where id = $1', [id]),
-    );
-    if (!rowCount) throw new HttpError(404, NOT_FOUND);
+    await withSession(pool, currentUser(req), async (db) => {
+      const { rows } = await db.query<{ status: string }>('select status from orders where id = $1 for update', [id]);
+      if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+      if (rows[0].status === 'order') {
+        throw new HttpError(409, 'Pedido confirmado não é excluído. Cancele o pedido: o cancelamento devolve o estoque.');
+      }
+      await db.query('delete from orders where id = $1', [id]);
+    });
     res.status(204).end();
   });
 
   router.get('/:id/pdf', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    const { order, pix } = await withSession(pool, currentUser(req), async (db) => {
+      const order = await loadOrderDetail(db, id);
+      return { order, pix: order ? await orderPix(db, order) : null };
+    });
     if (!order) throw new HttpError(404, NOT_FOUND);
-    const pdf = await renderOrderPdf(order, config.timeZone);
+    const pdf = await renderOrderPdf(order, config.timeZone, pix);
     const disposition = req.query.download === '1' ? 'attachment' : 'inline';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${orderFileName(order)}"`);
@@ -304,8 +453,12 @@ export function ordersRouter(ctx: AppContext) {
   router.post('/:id/whatsapp', async (req, res) => {
     const user = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
+    const { order, pix } = await withSession(pool, user, async (db) => {
+      const order = await loadOrderDetail(db, id);
+      return { order, pix: order ? await orderPix(db, order) : null };
+    });
     if (!order) throw new HttpError(404, NOT_FOUND);
+    if (order.status === 'cancelled') throw new HttpError(409, 'Documento cancelado não é enviado ao cliente.');
 
     const settings = await withSession(pool, user, (db) => loadEvolutionSettings(db, user.tenant_id));
     if (!settings) {
@@ -315,8 +468,7 @@ export function ordersRouter(ctx: AppContext) {
         'WHATSAPP_NOT_CONFIGURED',
       );
     }
-    // O número é guardado normalizado; só números antigos ou importados precisam de ajuste.
-    const number = /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
+    const number = clientNumber(order);
     if (!number) {
       throw new HttpError(
         422,
@@ -325,7 +477,7 @@ export function ordersRouter(ctx: AppContext) {
       );
     }
 
-    const pdf = await renderOrderPdf(order, config.timeZone);
+    const pdf = await renderOrderPdf(order, config.timeZone, pix);
     try {
       await sendPdfDocument(
         settings,
@@ -339,7 +491,8 @@ export function ordersRouter(ctx: AppContext) {
 
     const sentAt = await withSession(pool, user, async (db) => {
       const { rows } = await db.query<{ sent_at: Date }>(
-        'update orders set sent_at = now() where id = $1 returning sent_at',
+        // Enviar o PDF conta como contato: a retomada recomeça a contar daqui.
+        'update orders set sent_at = now(), followup_on = null where id = $1 returning sent_at',
         [id],
       );
       return rows[0]?.sent_at ?? null;

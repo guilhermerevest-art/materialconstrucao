@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { CheckCheck, Plus } from 'lucide-react';
+import { ArrowRight, CheckCheck, MessageCircleReply, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EmptyState, StatusBadge } from '@/components/shared';
@@ -41,7 +41,9 @@ export function DashboardPage() {
   const firstName = user.name.split(/\s+/)[0];
 
   return (
-    <div className="grid gap-6">
+    // grid-cols-1 (minmax(0, 1fr)): sem isso a coluna cresce até a largura da tabela de
+    // lojas e a página passa da tela no celular.
+    <div className="grid grid-cols-1 gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground first-letter:uppercase">{today}</p>
@@ -101,6 +103,22 @@ export function DashboardPage() {
           </>
         )}
       </div>
+
+      {s && s.followups_due > 0 && (
+        <Link
+          to={isAdmin ? '/pedidos?status=followup' : '/pedidos?status=followup&meus=1'}
+          className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-5 py-3 text-warning hover:border-warning/60"
+        >
+          <MessageCircleReply className="size-5 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 text-sm">
+            <strong className="font-semibold">
+              {s.followups_due === 1 ? '1 orçamento para retomar hoje' : `${s.followups_due} orçamentos para retomar hoje`}
+            </strong>
+            <span className="hidden sm:inline"> · clientes que pediram orçamento e ainda não fecharam</span>
+          </span>
+          <ArrowRight className="size-4 shrink-0" aria-hidden />
+        </Link>
+      )}
 
       {isAdmin && data && data.by_store.length > 0 && (
         <Card>
@@ -183,7 +201,7 @@ export function DashboardPage() {
                   <TD className="font-medium">{order.client_name}</TD>
                   {isAdmin && <TD className="text-muted-foreground">{order.store_name}</TD>}
                   <TD>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} cancelledFrom={order.cancelled_from} />
                   </TD>
                   <TD className="text-right font-semibold tabular-nums">{formatMoney(order.total_amount)}</TD>
                   <TD className="pr-5">

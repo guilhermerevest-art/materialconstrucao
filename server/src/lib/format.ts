@@ -14,8 +14,17 @@ export function formatDateTime(value: Date, timeZone: string) {
   return `${date} às ${time}`;
 }
 
-export type OrderStatus = 'quote' | 'order';
+/** Dia de hoje ("2026-10-10") no fuso da loja. */
+export function todayIn(timeZone: string, date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
+export type OrderStatus = 'quote' | 'order' | 'cancelled';
 
 export const formatOrderNumber = (id: number) => String(id).padStart(6, '0');
 
-export const documentLabel = (status: OrderStatus) => (status === 'quote' ? 'Orçamento' : 'Pedido');
+/** "Orçamento", "Pedido", "Orçamento perdido" ou "Pedido cancelado". */
+export function documentLabel(status: OrderStatus, cancelledFrom: 'quote' | 'order' | null = null) {
+  if (status === 'cancelled') return cancelledFrom === 'quote' ? 'Orçamento perdido' : 'Pedido cancelado';
+  return status === 'quote' ? 'Orçamento' : 'Pedido';
+}

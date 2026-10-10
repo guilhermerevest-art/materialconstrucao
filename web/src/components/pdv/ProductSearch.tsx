@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/misc';
 import { api, toQuery } from '@/lib/api';
-import { formatMoney, parseDecimal } from '@/lib/format';
+import { formatMoney, formatQuantity, parseDecimal } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import type { Paginated, Product } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -25,10 +25,13 @@ export function ProductSearch({
   ref,
   onAdd,
   invalid,
+  storeId,
 }: {
   ref?: Ref<ProductSearchHandle>;
   onAdd: (product: Product, quantity: number) => void;
   invalid?: boolean;
+  /** Loja do pedido: a busca mostra o saldo de estoque dela. */
+  storeId?: number | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
@@ -65,8 +68,8 @@ export function ProductSearch({
   useImperativeHandle(ref, () => ({ focus: showSearch, pendingProduct: () => pending }));
 
   const { data, isFetching } = useQuery({
-    queryKey: ['products', 'search', term],
-    queryFn: () => api<Paginated<Product>>(`/products${toQuery({ q: term, page_size: 8 })}`),
+    queryKey: ['products', 'search', term, storeId],
+    queryFn: () => api<Paginated<Product>>(`/products${toQuery({ q: term, page_size: 8, stock_store_id: storeId })}`),
     enabled: term.length > 0,
     placeholderData: keepPreviousData,
   });
@@ -232,13 +235,22 @@ export function ProductSearch({
               onMouseEnter={() => setActive(index)}
               onClick={() => pick(product)}
               className={cn(
-                'grid cursor-pointer grid-cols-[5.5rem_minmax(0,1fr)_3rem_auto] items-center gap-3 rounded-sm px-3 py-2 text-sm',
+                'grid cursor-pointer grid-cols-[5.5rem_minmax(0,1fr)_3rem_5.5rem_auto] items-center gap-3 rounded-sm px-3 py-2 text-sm',
                 index === active && 'bg-muted',
               )}
             >
               <span className="truncate text-muted-foreground tabular-nums">{product.code ?? '-'}</span>
               <span className="truncate font-medium">{product.name}</span>
               <span className="text-center text-muted-foreground">{product.unit}</span>
+              <span
+                className={cn(
+                  'text-right text-[13px] tabular-nums',
+                  product.stock != null && product.stock <= 0 ? 'font-medium text-destructive' : 'text-muted-foreground',
+                )}
+                title="Estoque na loja do pedido"
+              >
+                {product.stock != null ? `Est. ${formatQuantity(product.stock)}` : ''}
+              </span>
               <span className="text-right font-semibold tabular-nums">{formatMoney(product.price)}</span>
             </li>
           ))}

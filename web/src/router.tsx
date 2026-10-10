@@ -2,21 +2,30 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { AppLayout } from './components/AppLayout';
 import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
+import { CashPage } from './pages/CashPage';
 import { ClientsPage } from './pages/ClientsPage';
+import { ConferencePage } from './pages/ConferencePage';
 import { DashboardPage } from './pages/DashboardPage';
+import { DeliveriesPage } from './pages/DeliveriesPage';
+import { DeliveryProofPage } from './pages/DeliveryProofPage';
 import { LoginPage } from './pages/LoginPage';
+import { MonitorPage } from './pages/MonitorPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ReceivablesPage } from './pages/ReceivablesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { StockEntryPage } from './pages/StockEntryPage';
+import { StockPage } from './pages/StockPage';
 import { StoresPage } from './pages/StoresPage';
 import { SuperLoginPage } from './pages/SuperLoginPage';
 import { SuperTenantsPage } from './pages/SuperTenantsPage';
 import { UsersPage } from './pages/UsersPage';
+import { WorkflowsPage } from './pages/WorkflowsPage';
 
 function FullPageSpinner() {
   return (
@@ -85,15 +94,24 @@ export const router = createBrowserRouter([
       { path: 'pedidos/novo', element: <OrderEditorPage /> },
       { path: 'pedidos/:id', element: <OrderDetailPage /> },
       { path: 'pedidos/:id/editar', element: <OrderEditorPage /> },
+      { path: 'pedidos/:id/conferencia', element: <ConferencePage /> },
       { path: 'clientes', element: <ClientsPage /> },
       { path: 'produtos', element: <ProductsPage /> },
       { path: 'relatorios', element: <ReportsPage /> },
+      { path: 'monitor', element: <MonitorPage /> },
+      { path: 'estoque', element: <StockPage /> },
+      { path: 'entregas', element: <DeliveriesPage /> },
+      { path: 'entregas/:id', element: <DeliveryProofPage /> },
+      { path: 'caixa', element: <CashPage /> },
+      { path: 'contas-a-receber', element: <ReceivablesPage /> },
       {
         element: <RequireAdmin />,
         children: [
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
+          { path: 'fluxo-de-pedidos', element: <WorkflowsPage /> },
+          { path: 'estoque/entrada', element: <StockEntryPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
         ],
       },

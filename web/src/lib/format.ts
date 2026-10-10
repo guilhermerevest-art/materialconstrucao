@@ -1,4 +1,4 @@
-import type { DiscountType, OrderStatus } from './types';
+import type { CancelledFrom, DiscountType, OrderStatus } from './types';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const quantity = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
@@ -14,7 +14,11 @@ export const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 export const formatDateTime = (iso: string) => `${dateFormat.format(new Date(iso))} ${timeFormat.format(new Date(iso))}`;
 
 export const formatOrderNumber = (id: number) => String(id).padStart(6, '0');
-export const documentLabel = (status: OrderStatus) => (status === 'quote' ? 'Orçamento' : 'Pedido');
+/** "Orçamento", "Pedido", "Orçamento perdido" ou "Pedido cancelado". */
+export function documentLabel(status: OrderStatus, cancelledFrom: CancelledFrom = null) {
+  if (status === 'cancelled') return cancelledFrom === 'quote' ? 'Orçamento perdido' : 'Pedido cancelado';
+  return status === 'quote' ? 'Orçamento' : 'Pedido';
+}
 
 /** WhatsApp guardado só com dígitos ("5511987654321") no formato "+55 (11) 98765-4321". */
 export function formatWhatsapp(digits: string) {
@@ -45,6 +49,8 @@ export function parseDecimal(text: string): number | null {
 
 /** Número para o campo de texto: 2.5 -> "2,5". */
 export const decimalToInput = (value: number) => String(value).replace('.', ',');
+/** Valor em reais para o campo de texto: 116.7 -> "116,70". */
+export const moneyToInput = (value: number) => value.toFixed(2).replace('.', ',');
 
 /**
  * Subtotal em centavos com o mesmo arredondamento do banco
@@ -68,3 +74,36 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
+
+/** "2026-10-20" (dia, sem hora) para "20/10/2026". */
+export function formatDay(value: string) {
+  const [year, month, day] = value.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** Dia de hoje no navegador, como "2026-10-10". */
+export function todayIso(date = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Soma dias a "2026-10-10". */
+export function addDays(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return todayIso(new Date(y!, m! - 1, d! + days));
+}
+
+/** Dias de `from` até `to` ("2026-10-08" até "2026-10-10" = 2). */
+export function daysBetween(from: string, to: string) {
+  const toUtc = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y!, m! - 1, d!);
+  };
+  return Math.round((toUtc(to) - toUtc(from)) / 86_400_000);
+}
+
+/** "sexta-feira, 10 de outubro". */
+export function formatWeekday(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y!, m! - 1, d!));
+}

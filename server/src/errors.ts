@@ -22,6 +22,8 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   tenant_domains_domain_key: 'Este domínio já está em outra lojamestre.',
   tenants_slug_key: 'Já existe uma lojamestre com esse slug.',
   payment_methods_tenant_name_key: 'Já existe uma forma de pagamento com esse nome.',
+  sectors_tenant_name_key: 'Já existe um setor com esse nome.',
+  workflows_scope_key: 'Este fluxo acabou de ser criado por outra pessoa. Atualize a página.',
 };
 
 const IN_USE_MESSAGES: Record<string, string> = {
@@ -32,6 +34,8 @@ const IN_USE_MESSAGES: Record<string, string> = {
   orders_store_id_fkey: 'Esta loja tem pedidos registrados e não pode ser excluída.',
   orders_payment_method_id_fkey:
     'Esta forma de pagamento aparece em pedidos e não pode ser excluída. Desative-a para tirá-la da lista.',
+  workflow_stages_sector_id_fkey: 'Este setor é usado em etapas do fluxo. Tire-o das etapas antes de excluir.',
+  orders_stage_id_fkey: 'Há pedidos nesta etapa. Avance ou devolva esses pedidos antes de removê-la.',
 };
 
 const CHECK_MESSAGES: Record<string, string> = {

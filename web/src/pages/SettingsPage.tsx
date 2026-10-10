@@ -3,6 +3,8 @@ import { CheckCircle2, PlugZap, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
+import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
+import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -186,6 +188,9 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <FollowupSettingsCard />
+      <FinanceSettingsCard />
     </div>
   );
 }
