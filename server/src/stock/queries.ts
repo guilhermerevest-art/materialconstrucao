@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 
-export type StockKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in';
+export type StockKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'return';
 
 export type StockChange = {
   store_id: number;

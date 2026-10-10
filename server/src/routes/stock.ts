@@ -6,7 +6,11 @@ import type { AppContext } from '../context.js';
 import { queryAs, withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
+import { loadFinanceSettings } from '../finance/queries.js';
+import { purchaseOrderNumber } from '../pdf/purchaseOrderPdf.js';
+import { createPayables, receivePurchaseOrder, resolveSupplier } from '../purchases/queries.js';
 import { applyStockChanges, type StockChange } from '../stock/queries.js';
+import { setPriceReason } from './pricing.js';
 
 const quantity = z
   .number('Informe a quantidade.')
@@ -64,6 +68,9 @@ const digits = (max: number) =>
 
 const entrySchema = z.object({
   store_id: z.number('Selecione a loja.').int().positive(),
+  // Fornecedor escolhido na tela; sem ele, vem pelo CNPJ ou pelo nome da nota.
+  supplier_id: z.number().int().positive().nullable().default(null),
+  purchase_order_id: z.number().int().positive().nullable().default(null),
   supplier_name: optionalText(120),
   supplier_document: digits(14),
   invoice_number: optionalText(20),
@@ -72,6 +79,8 @@ const entrySchema = z.object({
   issued_at: z.iso.datetime({ offset: true }).nullable().default(null),
   total_amount: z.number().min(0).max(999_999_999).nullable().default(null),
   notes: optionalText(300),
+  // XML da nota (importado na tela): fica guardado para o pacote do contador.
+  xml: z.string().max(800_000, 'O XML da nota é grande demais.').nullable().default(null),
   items: z
     .array(
       z.object({
@@ -82,16 +91,39 @@ const entrySchema = z.object({
         // Para reconhecer o item na próxima nota do mesmo fornecedor.
         supplier_code: optionalText(60),
         factor: z.number().positive().max(100_000).default(1),
+        // Novo preço de venda do produto (o sugerido pela margem ou digitado). Nulo mantém.
+        new_price: z
+          .number()
+          .min(0, 'O preço não pode ser negativo.')
+          .max(9_999_999_999)
+          .transform((v) => Math.round(v * 100) / 100)
+          .nullable()
+          .default(null),
       }),
     )
     .min(1, 'A entrada precisa de pelo menos um item.')
     .max(500),
+  // Duplicatas da nota (ou o vencimento digitado): viram contas a pagar com o financeiro ligado.
+  payables: z
+    .array(
+      z.object({
+        due_date: z.iso.date('Informe o vencimento.'),
+        amount: z
+          .number('Informe o valor da parcela.')
+          .positive('O valor da parcela precisa ser maior que zero.')
+          .max(999_999_999)
+          .transform((v) => Math.round(v * 100) / 100),
+        document_number: optionalText(30),
+      }),
+    )
+    .max(60)
+    .default([]),
 });
 
 const matchSchema = z.object({
   supplier_document: digits(14),
   items: z
-    .array(z.object({ code: optionalText(60), ean: optionalText(14), name: optionalText(200) }))
+    .array(z.object({ code: optionalText(60), ean: optionalText(14), name: optionalText(200), unit: optionalText(10) }))
     .max(500),
 });
 
@@ -326,7 +358,7 @@ export function stockRouter(ctx: AppContext) {
       user,
       `select e.id, e.store_id, s.name as store_name, e.supplier_name, e.supplier_document, e.invoice_number,
               e.invoice_series, e.access_key, e.issued_at, e.total_amount, e.created_at, u.name as user_name,
-              (select count(*) from stock_movements m where m.entry_id = e.id) as items_count,
+              (select count(*) from stock_movements m where m.entry_id = e.id) as items_count, e.purchase_order_id,
               count(*) over () as total_count
          from stock_entries e
          join stores s on s.id = e.store_id
@@ -362,7 +394,12 @@ export function stockRouter(ctx: AppContext) {
           order by p.name`,
         [id],
       );
-      return { entry: entry.rows[0], items: items.rows };
+      const payables = await db.query(
+        `select id, installment, installments, due_date, amount, paid_amount, status
+           from payables where entry_id = $1 and status <> 'cancelled' order by due_date, id`,
+        [id],
+      );
+      return { entry: entry.rows[0], items: items.rows, payables: payables.rows };
     });
     res.json(data);
   });
@@ -402,14 +439,35 @@ export function stockRouter(ctx: AppContext) {
         }
         result.push(match);
       }
-      // Nome, código e unidade para a tela mostrar o produto já escolhido.
+      // Nome, código e unidade para a tela mostrar o produto já escolhido; preço, custo e
+      // margem para sugerir o novo preço de venda.
       const ids = [...new Set(result.flatMap((m) => (m ? [m.product_id] : [])))];
-      const { rows: products } = await db.query<{ id: number; code: string | null; name: string; unit: string }>(
-        'select id, code, name, unit from products where id = any($1::bigint[])',
+      const { rows: products } = await db.query<{
+        id: number;
+        code: string | null;
+        name: string;
+        unit: string;
+        purchase_unit: string | null;
+        purchase_factor: number | null;
+      }>(
+        `select p.id, p.code, p.name, p.unit, p.price, p.cost_price, p.purchase_unit, p.purchase_factor,
+                coalesce(p.markup_percent, st.default_markup_percent) as markup_percent
+           from products p
+           left join settings st on st.tenant_id = p.tenant_id
+          where p.id = any($1::bigint[])`,
         [ids],
       );
       const byId = new Map(products.map((p) => [p.id, p]));
-      return result.map((m) => (m ? { ...m, product: byId.get(m.product_id)! } : null));
+      return result.map((m, index) => {
+        if (!m) return null;
+        const product = byId.get(m.product_id)!;
+        // Sem o vínculo do fornecedor, a nota na unidade de compra do produto (SC) converte pelo fator dele.
+        const unit = body.items[index]?.unit?.toUpperCase();
+        if (m.source !== 'supplier' && product.purchase_unit && product.purchase_factor && unit === product.purchase_unit) {
+          return { ...m, factor: product.purchase_factor, product };
+        }
+        return { ...m, product };
+      });
     });
     res.json({ matches });
   });
@@ -430,28 +488,54 @@ export function stockRouter(ctx: AppContext) {
         );
         if (rows[0]) throw new HttpError(409, `Esta nota já deu entrada no estoque (entrada nº ${rows[0].id}).`);
       }
+      if (body.payables.length && !(await loadFinanceSettings(db)).enabled) {
+        throw new HttpError(409, 'Contas a pagar dependem do financeiro ligado (Configurações → Financeiro).', 'FINANCE_DISABLED');
+      }
+      const supplier = await resolveSupplier(db, user, body);
+      const supplierName = body.supplier_name ?? supplier?.name ?? null;
       const computedTotal = body.items.reduce((sum, i) => sum + i.quantity * (i.unit_cost ?? 0), 0);
       const { rows } = await db.query<{ id: number }>(
         `insert into stock_entries (tenant_id, store_id, user_id, supplier_name, supplier_document, invoice_number,
-                                    invoice_series, access_key, issued_at, total_amount, notes)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                                    invoice_series, access_key, issued_at, total_amount, notes, supplier_id, purchase_order_id, xml)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          returning id`,
         [
           user.tenant_id,
           body.store_id,
           user.id,
-          body.supplier_name,
-          body.supplier_document,
+          supplierName,
+          body.supplier_document ?? supplier?.document ?? null,
           body.invoice_number,
           body.invoice_series,
           body.access_key,
           body.issued_at,
           Math.round((body.total_amount ?? computedTotal) * 100) / 100,
           body.notes,
+          supplier?.id ?? null,
+          body.purchase_order_id,
+          // Só o XML da própria nota (com a chave dela).
+          body.xml && body.access_key && body.xml.includes(body.access_key) ? body.xml : null,
         ],
       );
       const entryId = rows[0]!.id;
-      const note = body.invoice_number ? `NF ${body.invoice_number}${body.supplier_name ? ` - ${body.supplier_name}` : ''}` : body.notes;
+      if (body.purchase_order_id) await receivePurchaseOrder(db, body.purchase_order_id, body.store_id, body.items);
+      if (body.payables.length) {
+        await createPayables(db, user, {
+          store_id: body.store_id,
+          supplier_id: supplier?.id ?? null,
+          description: body.invoice_number
+            ? `NF ${body.invoice_number}`
+            : body.purchase_order_id
+              ? `Pedido de compra ${purchaseOrderNumber(body.purchase_order_id)}`
+              : `Entrada de estoque nº ${entryId}`,
+          category: 'Fornecedor',
+          document_number: body.invoice_number,
+          entry_id: entryId,
+          purchase_order_id: body.purchase_order_id,
+          installments: body.payables,
+        });
+      }
+      const note = body.invoice_number ? `NF ${body.invoice_number}${supplierName ? ` - ${supplierName}` : ''}` : body.notes;
       await applyStockChanges(
         db,
         user,
@@ -473,6 +557,17 @@ export function stockRouter(ctx: AppContext) {
              from unnest($1::bigint[], $2::numeric[]) as c(id, cost)
             where p.id = c.id`,
           [costs.map((i) => i.product_id), costs.map((i) => Math.round(i.unit_cost! * 10_000) / 10_000)],
+        );
+      }
+      // Preço de venda atualizado na entrada (fica no histórico de preço com a nota).
+      const prices = body.items.filter((i) => i.new_price !== null);
+      if (prices.length) {
+        await setPriceReason(db, body.invoice_number ? `Entrada da NF ${body.invoice_number}` : `Entrada de estoque nº ${entryId}`);
+        await db.query(
+          `update products p set price = c.price
+             from unnest($1::bigint[], $2::numeric[]) as c(id, price)
+            where p.id = c.id`,
+          [prices.map((i) => i.product_id), prices.map((i) => i.new_price)],
         );
       }
       const mappings = body.supplier_document ? body.items.filter((i) => i.supplier_code) : [];

@@ -57,7 +57,7 @@ export function ReceiveDialog({ receivable, onClose }: { receivable: Receivable;
     queryFn: () => api<{ items: PaymentMethod[] }>('/payment-methods').then((r) => r.items),
   });
   // Crediário é como se vende, não como se paga.
-  const options = (methods.data ?? []).filter((m) => m.active && m.kind !== 'store_credit');
+  const options = (methods.data ?? []).filter((m) => m.active && m.kind !== 'store_credit' && m.kind !== 'fiado');
   const method = options.find((m) => String(m.id) === methodId);
 
   useEffect(() => {

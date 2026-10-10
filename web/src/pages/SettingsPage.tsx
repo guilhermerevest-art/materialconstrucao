@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Landmark, MessageCircleReply, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
+import { BadgePercent, CheckCircle2, Landmark, MessageCircleReply, NotebookPen, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { FiscalSettingsForm } from '@/components/fiscal/FiscalSettingsForm';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
 import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
+import { FiadoSettingsCard } from '@/components/FiadoSettingsCard';
 import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
+import { DeliverySettingsCard } from '@/components/DeliverySettingsCard';
+import { SalesSettingsCard } from '@/components/SalesSettingsCard';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +32,7 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // A aba vai na URL: as mensagens de "configure em Configurações → Fiscal" levam direto para ela.
   const requested = searchParams.get('aba');
-  const tab = requested === 'fiscal' || requested === 'financeiro' || requested === 'retomada' ? requested : 'whatsapp';
+  const tab = ['fiscal', 'financeiro', 'fiado', 'retomada', 'vendas'].includes(requested ?? '') ? requested! : 'whatsapp';
 
   return (
     <div className="max-w-4xl">
@@ -40,6 +43,10 @@ export function SettingsPage() {
             <WhatsAppIcon className="size-4" />
             WhatsApp
           </TabsTrigger>
+          <TabsTrigger value="vendas">
+            <BadgePercent />
+            Vendas
+          </TabsTrigger>
           <TabsTrigger value="retomada">
             <MessageCircleReply />
             Retomada
@@ -47,6 +54,10 @@ export function SettingsPage() {
           <TabsTrigger value="financeiro">
             <Landmark />
             Financeiro
+          </TabsTrigger>
+          <TabsTrigger value="fiado">
+            <NotebookPen />
+            Fiado
           </TabsTrigger>
           <TabsTrigger value="fiscal">
             <Receipt />
@@ -56,11 +67,18 @@ export function SettingsPage() {
         <TabsContent value="whatsapp">
           <WhatsAppSettings />
         </TabsContent>
+        <TabsContent value="vendas" className="max-w-3xl">
+          <SalesSettingsCard />
+          <DeliverySettingsCard />
+        </TabsContent>
         <TabsContent value="retomada" className="max-w-3xl">
           <FollowupSettingsCard />
         </TabsContent>
         <TabsContent value="financeiro" className="max-w-3xl">
           <FinanceSettingsCard />
+        </TabsContent>
+        <TabsContent value="fiado" className="max-w-3xl">
+          <FiadoSettingsCard />
         </TabsContent>
         <TabsContent value="fiscal">
           <FiscalSettingsForm />

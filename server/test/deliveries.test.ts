@@ -228,6 +228,49 @@ describeDb('entregas e retiradas', () => {
     expect((await sellerB.get(`/api/deliveries/${d1.id}`)).status).toBe(404);
   });
 
+  it('nota fiscal: a entrega mostra a NF do pedido; com a opção ligada, o romaneio sem nota não sai', async () => {
+    const seller = await login(app, 'vendedor.a');
+    const admin = await login(app, 'admin');
+    const o1 = await createOrder(seller);
+    const o2 = await createOrder(seller, { delivery_address: 'Av. Brasil, 500' });
+    const schedule = async (order: typeof o1) =>
+      (
+        await seller.post(`/api/orders/${order.id}/deliveries`).send({
+          kind: 'delivery',
+          status: 'scheduled',
+          scheduled_date: '2026-10-21',
+          items: [{ order_item_id: itemId(order, f.products.areia), quantity: 1 }],
+        })
+      ).body.delivery as { id: number };
+    const d1 = await schedule(o1);
+    const d2 = await schedule(o2);
+    const invoice = (orderId: number, number: number, status: string) =>
+      adminPool.query(
+        `insert into fiscal_documents (tenant_id, store_id, order_id, user_id, model, environment, series, number, status, total_amount)
+         values ($1, $2, $3, $4, 55, 'homologacao', 1, $5, $6, 100)`,
+        [f.tenantId, f.storeA, orderId, f.adminId, number, status],
+      );
+    await invoice(o1.id, 41, 'cancelado');
+    await invoice(o1.id, 42, 'autorizado');
+    const agenda = (await seller.get('/api/deliveries?from=2026-10-21')).body.items as { id: number; invoice: unknown }[];
+    expect(agenda.find((d) => d.id === d1.id)!.invoice).toMatchObject({ model: 55, number: 42, series: 1 });
+    expect(agenda.find((d) => d.id === d2.id)!.invoice).toBeNull();
+
+    const route = (await seller.post('/api/delivery-routes').send({ route_date: '2026-10-21', delivery_ids: [d1.id, d2.id] })).body.route;
+    expect((await seller.get(`/api/delivery-routes/${route.id}/pdf`)).status).toBe(200);
+
+    // Ligada: o pedido sem nota segura o caminhão; com a nota, sai.
+    expect((await seller.put('/api/delivery-settings').send({ requires_invoice: true })).status).toBe(403);
+    await admin.put('/api/delivery-settings').send({ requires_invoice: true });
+    expect((await seller.get('/api/delivery-settings')).body.settings).toEqual({ requires_invoice: true });
+    const blocked = await seller.post(`/api/delivery-routes/${route.id}/depart`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('INVOICE_REQUIRED');
+    expect(blocked.body.error).toContain(String(o2.id).padStart(6, '0'));
+    await invoice(o2.id, 43, 'autorizado');
+    expect((await seller.post(`/api/delivery-routes/${route.id}/depart`)).body.route.status).toBe('in_route');
+  });
+
   it('cancelar pedido: bloqueado com entrega feita; desmarca as agendadas', async () => {
     const admin = await login(app, 'admin');
     const order = await createOrder(admin);

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CloudDownload, Download, FileCode2, KeyRound, MoreHorizontal, RefreshCw, Search, Stamp } from 'lucide-react';
+import { CloudDownload, Download, FileCode2, FileInput, KeyRound, MoreHorizontal, PackageCheck, RefreshCw, Search, Stamp } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
@@ -280,7 +280,8 @@ export function FiscalInboundPage() {
           />
         </Card>
       ) : (
-        <div className="grid gap-4">
+        // grid-cols-1 (minmax(0, 1fr)): sem ele a tabela larga estica a página no celular.
+        <div className="grid grid-cols-1 gap-4">
           {meta && (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
               <span>
@@ -398,6 +399,14 @@ export function FiscalInboundPage() {
                             <div className="flex flex-wrap gap-1">
                               {doc.cancelled ? <Badge variant="danger">Cancelada pelo emitente</Badge> : <ManifestationBadge doc={doc} />}
                               {doc.summary && <Badge variant="neutral">Resumo</Badge>}
+                              {doc.stock_entry_id && (
+                                <Link to="/estoque?aba=entradas" title="Já deu entrada no estoque">
+                                  <Badge variant="success">
+                                    <PackageCheck className="size-3" />
+                                    Entrada nº {doc.stock_entry_id}
+                                  </Badge>
+                                </Link>
+                              )}
                             </div>
                             {doc.manifestation_message && doc.manifestation_status !== 'registrado' && (
                               <span className="mt-1 block text-[12px] text-muted-foreground">{doc.manifestation_message}</span>
@@ -411,6 +420,14 @@ export function FiscalInboundPage() {
                                     <Download />
                                     DANFE
                                   </a>
+                                </Button>
+                              )}
+                              {!doc.summary && !doc.cancelled && !doc.stock_entry_id && (
+                                <Button asChild size="sm">
+                                  <Link to={`/estoque/entrada?nota=${doc.id}`} title="Abre a entrada de estoque com os itens desta nota">
+                                    <FileInput />
+                                    Dar entrada
+                                  </Link>
                                 </Button>
                               )}
                               {doc.summary && !doc.manifestation && !doc.cancelled && (

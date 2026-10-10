@@ -15,12 +15,14 @@ import {
 import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
-import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
+import { loadOrderDetail, orderGreeting, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf, type OrderPdfPix } from '../pdf/orderPdf.js';
 import { loadFinanceSettings, orderOpenAmount } from '../finance/queries.js';
 import { pixPayload, pixQrPng } from '../finance/pix.js';
 import { completeRemaining } from '../deliveries/queries.js';
 import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
+import { assertCreditFits } from '../returns/queries.js';
+import { applyPreviousPrices, assertDiscountAllowed, discountLimit, loadClientPriceList, resolvePrices } from '../pricing/queries.js';
 import { assertClientSite } from './clientSites.js';
 import {
   loadOrderWorkflow,
@@ -54,6 +56,18 @@ const orderSchema = z.object({
     .transform((v) => Math.round(v * 100) / 100)
     .nullable()
     .default(null),
+  // Parte paga com o crédito do cliente (vale-troca de uma devolução). Sai do saldo dele na confirmação.
+  credit_used: z
+    .number('Crédito inválido.')
+    .min(0, 'O crédito usado não pode ser negativo.')
+    .max(99_999_999)
+    .transform((v) => Math.round(v * 100) / 100)
+    .default(0),
+  // Desconto acima do limite do vendedor: usuário e senha de quem libera.
+  discount_approval: z
+    .object({ username: z.string().trim().min(1, 'Informe o usuário de quem libera.').max(80), password: z.string().min(1, 'Informe a senha.').max(200) })
+    .nullable()
+    .optional(),
   items: z
     .array(itemSchema, 'Adicione pelo menos um produto.')
     .min(1, 'Adicione pelo menos um produto.')
@@ -88,6 +102,13 @@ const listSchema = z.object({
   ...pagination,
 });
 
+const previewSchema = z.object({
+  client_id: z.number().int().positive().nullable().default(null),
+  // Editando um orçamento: os itens que já estavam nele mantêm o preço da época.
+  order_id: z.number().int().positive().nullable().default(null),
+  items: z.array(itemSchema).max(300),
+});
+
 const cancelSchema = z.object({
   reason: z.string('Informe o motivo.').trim().min(3, 'Informe o motivo.').max(300, 'Use no máximo 300 caracteres.'),
 });
@@ -120,7 +141,7 @@ async function orderPix(db: pg.PoolClient, order: OrderDetail): Promise<OrderPdf
   if (rows[0]?.kind !== 'pix') return null;
   const { pix } = await loadFinanceSettings(db);
   if (!pix) return null;
-  const amount = await orderOpenAmount(db, order.id, order.total_amount);
+  const amount = await orderOpenAmount(db, order.id, Math.round((order.total_amount - order.credit_used) * 100) / 100);
   if (amount <= 0) return null;
   const payload = pixPayload({ ...pix, amount, txid: `PED${formatOrderNumber(order.id)}` });
   return { amount, payload, png: await pixQrPng(payload) };
@@ -162,7 +183,7 @@ async function resolvePaymentMethod(db: pg.PoolClient, id: number | null, curren
 }
 
 export function orderCaption(order: OrderDetail) {
-  const firstName = order.client_name.trim().split(/\s+/)[0] ?? '';
+  const firstName = orderGreeting(order);
   const label = documentLabel(order.status).toLowerCase();
   return [
     `Olá, ${firstName}! Segue em PDF o seu ${label} nº ${formatOrderNumber(order.id)}.`,
@@ -188,7 +209,7 @@ export function ordersRouter(ctx: AppContext) {
     const number = clientNumber(order);
     if (!number) return { status: 'failed', error: 'O WhatsApp do cliente é inválido, então ele não foi avisado.' };
     const text = renderStageMessage(stage.whatsapp_message, {
-      clientName: order.client_name,
+      clientGreeting: orderGreeting(order),
       orderId: order.id,
       storeName: order.store_name,
       stageName: stage.name,
@@ -254,6 +275,42 @@ export function ordersRouter(ctx: AppContext) {
     });
   });
 
+  /**
+   * Preço que cada item vai ter ao salvar (tabela do cliente, faixa de quantidade, preço
+   * da época no orçamento), para o PDV mostrar antes. Mesma conta do salvamento.
+   */
+  router.post('/price-preview', async (req, res) => {
+    const user = currentUser(req);
+    const body = previewSchema.parse(req.body);
+    const data = await withSession(pool, user, async (db) => {
+      const priceList = await loadClientPriceList(db, body.client_id);
+      const resolved = await resolvePrices(db, priceList, body.items);
+      let previous = new Map<number, { unit_price: number; quantity: number }>();
+      let sameClient = true;
+      if (body.order_id) {
+        const { rows: orders } = await db.query<{ client_id: number; status: string }>(
+          'select client_id, status from orders where id = $1',
+          [body.order_id],
+        );
+        if (orders[0]?.status === 'quote') {
+          sameClient = orders[0].client_id === body.client_id;
+          const { rows } = await db.query<{ product_id: number; unit_price: number; quantity: number }>(
+            'select product_id, unit_price, quantity from order_items where order_id = $1',
+            [body.order_id],
+          );
+          previous = new Map(rows.map((r) => [r.product_id, { unit_price: r.unit_price, quantity: r.quantity }]));
+        }
+      }
+      const prices = applyPreviousPrices(resolved, body.items, previous, sameClient);
+      return {
+        price_list: priceList ? { id: priceList.id, name: priceList.name } : null,
+        discount_limit: await discountLimit(db, user),
+        items: resolved.map((r, i) => ({ ...r, unit_price: prices[i]!, kept_previous: prices[i] !== r.unit_price })),
+      };
+    });
+    res.json(data);
+  });
+
   router.get('/:id', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
     const user = currentUser(req);
@@ -274,8 +331,8 @@ export function ordersRouter(ctx: AppContext) {
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id);
       const { rows } = await db.query<{ id: number }>(
         `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name,
-                             delivery_address, discount_type, discount_value, client_site_id, confirmed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, case when $5 = 'order' then now() end)
+                             delivery_address, discount_type, discount_value, client_site_id, credit_used, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, case when $5 = 'order' then now() end)
          returning id`,
         [
           user.tenant_id,
@@ -290,10 +347,13 @@ export function ordersRouter(ctx: AppContext) {
           body.discount_type,
           body.discount_value,
           body.client_site_id,
+          body.credit_used,
         ],
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
+      await assertDiscountAllowed(db, id, user, body.discount_approval);
+      await assertCreditFits(db, id);
       if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });
@@ -309,10 +369,11 @@ export function ordersRouter(ctx: AppContext) {
       const { rows } = await db.query<{
         status: string;
         store_id: number;
+        client_id: number;
         payment_method_id: number | null;
         client_site_id: number | null;
       }>(
-        'select status, store_id, payment_method_id, client_site_id from orders where id = $1 for update',
+        'select status, store_id, client_id, payment_method_id, client_site_id from orders where id = $1 for update',
         [id],
       );
       const current = rows[0];
@@ -326,15 +387,15 @@ export function ordersRouter(ctx: AppContext) {
       await assertClientSite(db, body.client_site_id, body.client_id, current.client_site_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id, current.payment_method_id);
 
-      const previous = await db.query<{ product_id: number; unit_price: number }>(
-        'select product_id, unit_price from order_items where order_id = $1',
+      const previous = await db.query<{ product_id: number; unit_price: number; quantity: number }>(
+        'select product_id, unit_price, quantity from order_items where order_id = $1',
         [id],
       );
       await db.query(
         `update orders
             set client_id = $2, status = $3, notes = $4, store_id = $5,
                 payment_method_id = $6, payment_method_name = $7,
-                delivery_address = $8, discount_type = $9, discount_value = $10, client_site_id = $11,
+                delivery_address = $8, discount_type = $9, discount_value = $10, client_site_id = $11, credit_used = $12,
                 confirmed_at = case when $3 = 'order' then now() end,
                 updated_at = now()
           where id = $1`,
@@ -350,9 +411,18 @@ export function ordersRouter(ctx: AppContext) {
           body.discount_type,
           body.discount_value,
           body.client_site_id,
+          body.credit_used,
         ],
       );
-      await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
+      await writeOrderItems(
+        db,
+        id,
+        body.items,
+        new Map(previous.rows.map((r) => [r.product_id, { unit_price: r.unit_price, quantity: r.quantity }])),
+        current.client_id === body.client_id,
+      );
+      await assertDiscountAllowed(db, id, user, body.discount_approval);
+      await assertCreditFits(db, id);
       if (body.status === 'order') await onOrderConfirmed(db, id, user, config.timeZone);
       return loadOrderView(db, id, user);
     });

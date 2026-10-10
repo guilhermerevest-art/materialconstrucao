@@ -13,7 +13,22 @@ export type CartItem = {
   unit: string;
   unit_price: number;
   quantity: number;
+  /** De onde veio o preço, quando não é o do catálogo ("Tabela Atacado", "Faixa 50+"). */
+  price_note?: string | null;
+  /** Próxima faixa, para o vendedor oferecer ("A partir de 50: R$ 36,90"). */
+  tier_hint?: string | null;
 };
+
+/** Origem do preço e a próxima faixa, embaixo do preço. */
+function PriceNotes({ item, className }: { item: CartItem; className?: string }) {
+  if (!item.price_note && !item.tier_hint) return null;
+  return (
+    <span className={cn('block text-xs leading-snug', className)}>
+      {item.price_note && <span className="block text-success">{item.price_note}</span>}
+      {item.tier_hint && <span className="block text-muted-foreground">{item.tier_hint}</span>}
+    </span>
+  );
+}
 
 const toQuantity = (text: string) => {
   const parsed = parseDecimal(text);
@@ -97,6 +112,7 @@ export function CartTable({
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
                 {item.quantity} {item.unit} × {formatMoney(item.unit_price)}
               </p>
+              <PriceNotes item={item} />
             </div>
             <Button
               variant="destructive-ghost"
@@ -154,7 +170,10 @@ export function CartTable({
                   />
                 </div>
               </TD>
-              <TD className="text-right tabular-nums">{formatMoney(item.unit_price)}</TD>
+              <TD className="text-right tabular-nums">
+                {formatMoney(item.unit_price)}
+                <PriceNotes item={item} className="max-w-40 whitespace-normal" />
+              </TD>
               <TD className="text-right font-semibold tabular-nums">
                 {centsToMoney(lineTotalCents(item.unit_price, item.quantity))}
               </TD>

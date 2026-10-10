@@ -36,6 +36,10 @@ export type AuthUser = SessionUser & {
   tenant_active: boolean;
   /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
   finance_enabled: boolean;
+  /** Fiado (caderneta) ligado na lojamestre. */
+  fiado_enabled: boolean;
+  /** Desconto máximo de quem vende, em %. Nulo = sem limite (admin nunca tem). */
+  max_discount_percent: number | null;
 };
 
 export type SuperAdmin = {
@@ -55,7 +59,10 @@ export async function loadAuthUser(pool: pg.Pool, id: number, tenantId: number):
     const { rows } = await db.query<AuthUser>(
       `select u.id, u.tenant_id, u.name, u.username, u.email, u.role, u.store_id,
               u.active, u.token_version, s.name as store_name, t.active as tenant_active,
-              coalesce(st.finance_enabled, false) as finance_enabled
+              coalesce(st.finance_enabled, false) as finance_enabled,
+              coalesce(st.fiado_enabled, false) as fiado_enabled,
+              case when u.role = 'admin' then null else coalesce(u.max_discount_percent, st.max_discount_percent) end
+                as max_discount_percent
          from users u
          join tenants t on t.id = u.tenant_id
          left join stores s on s.id = u.store_id
@@ -76,8 +83,8 @@ export async function loadSuperAdmin(db: Db, id: number): Promise<SuperAdmin | n
 }
 
 export function toPublicUser(user: AuthUser) {
-  const { id, name, username, email, role, store_id, store_name, tenant_id, finance_enabled } = user;
-  return { id, tenant_id, name, username, email, role, store_id, store_name, finance_enabled };
+  const { id, name, username, email, role, store_id, store_name, tenant_id, finance_enabled, fiado_enabled, max_discount_percent } = user;
+  return { id, tenant_id, name, username, email, role, store_id, store_name, finance_enabled, fiado_enabled, max_discount_percent };
 }
 
 export function toPublicSuperAdmin(sa: SuperAdmin) {

@@ -1,6 +1,8 @@
 import type pg from 'pg';
 import { HttpError } from '../errors.js';
 import type { OrderStatus } from '../lib/format.js';
+import { greetingName } from '../lib/greeting.js';
+import { applyPreviousPrices, loadClientPriceList, resolvePrices } from '../pricing/queries.js';
 
 export type OrderItem = {
   id: number;
@@ -13,6 +15,11 @@ export type OrderItem = {
   unit_price: number;
   subtotal: number;
 };
+
+/** Nome do "Olá, ...!" das mensagens do pedido. */
+export function orderGreeting(order: Pick<OrderDetail, 'client_name' | 'client_contact_name' | 'client_person_type'>) {
+  return greetingName({ name: order.client_name, contact_name: order.client_contact_name, person_type: order.client_person_type });
+}
 
 export type OrderDetail = {
   id: number;
@@ -50,6 +57,19 @@ export type OrderDetail = {
   cancel_reason: string | null;
   client_name: string;
   client_whatsapp: string;
+  /** Com quem falar no cliente (opcional). */
+  client_contact_name: string | null;
+  /** F (pessoa) ou J (empresa), do cadastro completo. */
+  client_person_type: string | null;
+  /** Tabela de preço do cliente usada no pedido. */
+  price_list_name: string | null;
+  /** Desconto acima do limite do vendedor: quem liberou e até quanto. */
+  discount_approved_by_name: string | null;
+  discount_approved_percent: number | null;
+  /** Tipo da forma de pagamento (dinheiro, crediário, fiado...). */
+  payment_method_kind: string | null;
+  /** Parte do total paga com o crédito do cliente (vale-troca). */
+  credit_used: number;
   store_name: string;
   store_address: string | null;
   store_phone: string | null;
@@ -96,6 +116,9 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
             o.payment_method_id, o.payment_method_name, o.confirmed_at, o.delivery_tracking, o.sent_at, o.created_at, o.updated_at,
             o.cancelled_from, o.cancelled_at, cu.name as cancelled_by_name, o.cancel_reason,
             c.name as client_name, c.whatsapp as client_whatsapp,
+            c.contact_name as client_contact_name, c.person_type as client_person_type,
+            o.price_list_name, o.discount_approved_percent, da.name as discount_approved_by_name,
+            pmk.kind as payment_method_kind, o.credit_used,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,
             u.name as user_name
@@ -104,6 +127,8 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
        join stores s on s.id = o.store_id
        join users u on u.id = o.user_id
        left join users cu on cu.id = o.cancelled_by
+       left join users da on da.id = o.discount_approved_by
+       left join payment_methods pmk on pmk.id = o.payment_method_id
        left join client_sites cs on cs.id = o.client_site_id
       where o.id = $1`,
     [id],
@@ -123,15 +148,18 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
 
 /**
  * Substitui os itens do pedido e recalcula subtotal, desconto e total, com o
- * desconto que já está gravado no pedido. O preço vem do catálogo, nunca do navegador. Na edição, produtos que já estavam no pedido mantêm o
- * preço da época (previousPrices).
+ * desconto que já está gravado no pedido. O preço vem do servidor, nunca do navegador:
+ * catálogo, tabela do cliente ou faixa de quantidade (ver resolvePrices). Na edição, o
+ * item que já estava no pedido mantém o preço da época (ver applyPreviousPrices).
  */
 export async function writeOrderItems(
   db: pg.PoolClient,
   orderId: number,
   items: OrderItemInput[],
-  previousPrices: Map<number, number> = new Map(),
+  previous: Map<number, { unit_price: number; quantity: number }> = new Map(),
+  sameClient = true,
 ): Promise<void> {
+  const previousPrices = new Map([...previous].map(([id, p]) => [id, p.unit_price]));
   const productIds = [...new Set(items.map((i) => i.product_id))];
   const { rows: products } = await db.query<{ id: number; name: string; price: number; active: boolean }>(
     'select id, name, price, active from products where id = any($1::bigint[])',
@@ -149,6 +177,15 @@ export async function writeOrderItems(
     }
   }
 
+  const { rows: orderRows } = await db.query<{ client_id: number }>('select client_id from orders where id = $1', [orderId]);
+  const priceList = await loadClientPriceList(db, orderRows[0]!.client_id);
+  const prices = applyPreviousPrices(await resolvePrices(db, priceList, items), items, previous, sameClient);
+  await db.query('update orders set price_list_id = $2, price_list_name = $3 where id = $1', [
+    orderId,
+    priceList?.id ?? null,
+    priceList?.name ?? null,
+  ]);
+
   await db.query('delete from order_items where order_id = $1', [orderId]);
   await db.query(
     `insert into order_items (tenant_id, order_id, position, product_id, product_code, product_name, unit, quantity, unit_price)
@@ -161,7 +198,7 @@ export async function writeOrderItems(
         items.map((_, index) => index + 1),
         items.map((i) => i.product_id),
         items.map((i) => i.quantity),
-        items.map((i) => previousPrices.get(i.product_id) ?? byId.get(i.product_id)!.price),
+        prices,
       ],
   );
   const { rows } = await db.query<{ subtotal_amount: number; discount_amount: number }>(

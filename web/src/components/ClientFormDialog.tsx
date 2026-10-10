@@ -1,11 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Search, TriangleAlert, UserRound } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { useUser } from '@/lib/auth';
 import { addressToForm, emptyAddress, formatDocument, IE_INDICATORS, type AddressForm } from '@/lib/fiscal';
 import { formatWhatsapp } from '@/lib/format';
-import type { Client, ClientDetails, FiscalAddress } from '@/lib/types';
+import type { Client, ClientDetails, FiscalAddress, PriceList } from '@/lib/types';
 import { AddressFields, mergeAddress } from './fiscal/AddressFields';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
@@ -62,6 +63,15 @@ export function ClientFormDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [priceListId, setPriceListId] = useState('');
+  const isAdmin = useUser().role === 'admin';
+  // Só o admin põe o cliente numa tabela de preço.
+  const priceLists = useQuery({
+    queryKey: ['price-lists'],
+    queryFn: () => api<{ items: PriceList[] }>('/price-lists').then((r) => r.items),
+    enabled: open && isAdmin,
+  });
   const [details, setDetails] = useState<DetailsForm>(() => detailsToForm(undefined));
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
   const [tab, setTab] = useState('contato');
@@ -72,6 +82,8 @@ export function ClientFormDialog({
     if (!open) return;
     setName(client?.name ?? initialValues?.name ?? '');
     setWhatsapp(client ? formatWhatsapp(client.whatsapp) : (initialValues?.whatsapp ?? ''));
+    setContactName(client?.contact_name ?? '');
+    setPriceListId(client?.price_list_id ? String(client.price_list_id) : '');
     setDetails(detailsToForm(client?.details));
     setAddress(addressToForm(client?.details));
     setTab('contato');
@@ -115,6 +127,9 @@ export function ClientFormDialog({
       const body = {
         name,
         whatsapp,
+        // Mesma regra: cliente que veio sem o campo (de outra tela) mantém o contato salvo.
+        contact_name: !client || client.contact_name !== undefined ? contactName : undefined,
+        price_list_id: isAdmin && (!client || client.price_list_id !== undefined) ? (priceListId ? Number(priceListId) : null) : undefined,
         details: sendDetails ? {
           person_type: details.person_type,
           document: documentDigits || null,
@@ -255,6 +270,33 @@ export function ClientFormDialog({
                   aria-invalid={Boolean(error && tab === 'contato') || undefined}
                 />
               </Field>
+              <Field
+                label="Contato (opcional)"
+                htmlFor="cliente-contato"
+                hint={isCompany ? 'Quem compra pela empresa. As mensagens dizem "Olá" para ele.' : 'Com quem falar, se não for o próprio cliente.'}
+              >
+                <Input
+                  id="cliente-contato"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  maxLength={80}
+                  autoComplete="off"
+                />
+              </Field>
+              {isAdmin && (priceLists.data?.length ?? 0) > 0 && (
+                <Field label="Tabela de preço" htmlFor="cliente-tabela" hint="O PDV usa o preço da tabela para este cliente.">
+                  <NativeSelect id="cliente-tabela" value={priceListId} onChange={(e) => setPriceListId(e.target.value)}>
+                    <option value="">Preço do catálogo</option>
+                    {priceLists.data!
+                      .filter((l) => l.active || String(l.id) === priceListId)
+                      .map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </Field>
+              )}
             </TabsContent>
 
             <TabsContent value="completo" forceMount className="grid gap-4 data-[state=inactive]:hidden">

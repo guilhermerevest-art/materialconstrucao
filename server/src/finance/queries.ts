@@ -49,10 +49,13 @@ type OrderCredit = {
 
 /** O que o cliente deve: em aberto, vencido e a parcela vencida mais antiga, em todas as lojas. */
 export async function loadClientCredit(db: pg.PoolClient, clientId: number, timeZone: string) {
-  const { rows } = await db.query<{ open_balance: number; overdue_amount: number; oldest_overdue: string | null }>(
+  const { rows } = await db.query<{ open_balance: number; overdue_amount: number; oldest_overdue: string | null; fiado_balance: number }>(
     `select coalesce(sum(amount - paid_amount), 0) as open_balance,
             coalesce(sum(amount - paid_amount) filter (where due_date < (now() at time zone $2)::date), 0) as overdue_amount,
-            min(due_date) filter (where due_date < (now() at time zone $2)::date) as oldest_overdue
+            min(due_date) filter (where due_date < (now() at time zone $2)::date) as oldest_overdue,
+            -- O limite vale para crediário e fiado juntos.
+            greatest(0, (select coalesce(sum(f.amount), 0) from fiado_entries f where f.client_id = $1 and f.cancelled_at is null))
+              as fiado_balance
        from receivables
       where client_id = $1 and status = 'open'`,
     [clientId, timeZone],
@@ -66,7 +69,7 @@ export async function loadClientCredit(db: pg.PoolClient, clientId: number, time
  */
 export async function assertStoreCredit(db: pg.PoolClient, orderId: number, timeZone: string) {
   const { rows } = await db.query<OrderCredit>(
-    `select o.client_id, c.name as client_name, o.total_amount, pm.kind, c.credit_limit
+    `select o.client_id, c.name as client_name, o.total_amount - o.credit_used as total_amount, pm.kind, c.credit_limit
        from orders o
        join clients c on c.id = o.client_id
        left join payment_methods pm on pm.id = o.payment_method_id
@@ -90,11 +93,12 @@ export async function assertStoreCredit(db: pg.PoolClient, orderId: number, time
       'CREDIT_OVERDUE',
     );
   }
-  const available = Math.round((order.credit_limit - credit.open_balance) * 100) / 100;
+  const debt = credit.open_balance + credit.fiado_balance;
+  const available = Math.round((order.credit_limit - debt) * 100) / 100;
   if (order.total_amount > available + 0.005) {
     throw new HttpError(
       409,
-      `O pedido de ${formatMoney(order.total_amount)} passa do crédito de ${order.client_name}: limite ${formatMoney(order.credit_limit)}, em aberto ${formatMoney(credit.open_balance)}, disponível ${formatMoney(Math.max(0, available))}.`,
+      `O pedido de ${formatMoney(order.total_amount)} passa do crédito de ${order.client_name}: limite ${formatMoney(order.credit_limit)}, em aberto ${formatMoney(debt)}, disponível ${formatMoney(Math.max(0, available))}.`,
       'CREDIT_LIMIT',
     );
   }
@@ -119,7 +123,7 @@ type OrderTerms = {
  */
 export async function createOrderReceivables(db: pg.PoolClient, orderId: number, timeZone: string) {
   const { rows } = await db.query<OrderTerms>(
-    `select o.tenant_id, o.store_id, o.client_id, o.total_amount, o.payment_method_id, o.payment_method_name,
+    `select o.tenant_id, o.store_id, o.client_id, o.total_amount - o.credit_used as total_amount, o.payment_method_id, o.payment_method_name,
             pm.kind, pm.installments, pm.first_due_days, pm.interval_days
        from orders o
        left join payment_methods pm on pm.id = o.payment_method_id
@@ -127,7 +131,8 @@ export async function createOrderReceivables(db: pg.PoolClient, orderId: number,
     [orderId],
   );
   const order = rows[0];
-  if (!order || order.total_amount <= 0) return;
+  // Fiado tem a conta própria (caderneta), não vira parcela.
+  if (!order || order.total_amount <= 0 || order.kind === 'fiado') return;
   const count = order.installments ?? 1;
   const first = order.first_due_days ?? 0;
   const interval = order.interval_days ?? 30;
@@ -210,29 +215,44 @@ export async function lockOpenSession(db: pg.PoolClient, userId: number) {
 
 /** Totais do caixa: por forma de pagamento, sangrias, suprimentos e o dinheiro que deve estar na gaveta. */
 export async function sessionSummary(db: pg.PoolClient, session: CashSession) {
+  // Parcelas e fiado recebidos neste caixa.
   const methods = await db.query<{ method_name: string; kind: string; amount: number; count: number }>(
-    `select method_name, kind, sum(amount) as amount, count(*) as count
-       from receivable_payments
-      where cash_session_id = $1 and reversed_at is null
+    `select method_name, kind, sum(amount) as amount, count(*)::int as count
+       from (
+         select method_name, kind, amount from receivable_payments where cash_session_id = $1 and reversed_at is null
+         union all
+         select payment_method_name, payment_kind, -amount from fiado_entries
+          where cash_session_id = $1 and kind = 'payment' and cancelled_at is null
+       ) p
       group by method_name, kind
       order by sum(amount) desc`,
     [session.id],
   );
-  const movements = await db.query<{ withdrawals: number; deposits: number }>(
+  const movements = await db.query<{ withdrawals: number; deposits: number; refunds: number }>(
     `select coalesce(sum(amount) filter (where kind = 'withdrawal'), 0) as withdrawals,
-            coalesce(sum(amount) filter (where kind = 'deposit'), 0) as deposits
+            coalesce(sum(amount) filter (where kind = 'deposit'), 0) as deposits,
+            coalesce(sum(amount) filter (where kind = 'refund'), 0) as refunds
        from cash_movements where cash_session_id = $1`,
     [session.id],
   );
+  // Contas pagas com o dinheiro da gaveta.
+  const paid = await db.query<{ payables: number }>(
+    'select coalesce(sum(amount), 0) as payables from payable_payments where cash_session_id = $1 and reversed_at is null',
+    [session.id],
+  );
   const cash = methods.rows.filter((m) => m.kind === 'cash').reduce((sum, m) => sum + m.amount, 0);
-  const { withdrawals, deposits } = movements.rows[0]!;
-  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals) * 100) / 100;
+  const { withdrawals, deposits, refunds } = movements.rows[0]!;
+  const payables = paid.rows[0]!.payables;
+  // Devolução em dinheiro e conta paga também saem da gaveta.
+  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals - refunds - payables) * 100) / 100;
   const received = Math.round(methods.rows.reduce((sum, m) => sum + m.amount, 0) * 100) / 100;
   return {
     methods: methods.rows,
     received,
     withdrawals,
     deposits,
+    refunds,
+    payables,
     expected_cash: expectedCash,
     difference: session.counted_amount === null ? null : Math.round((session.counted_amount - expectedCash) * 100) / 100,
   };

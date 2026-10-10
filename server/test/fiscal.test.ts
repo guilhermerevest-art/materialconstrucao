@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import request from 'supertest';
+import { inflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
@@ -25,6 +26,22 @@ const CLIENT_SECRET = 'segredo-do-parceiro';
 const ACCESS_KEY = '35261011222333000181650010000000011000000019';
 
 type Agent = ReturnType<typeof request.agent>;
+
+/** Lê os arquivos de um .zip (só o que o pacote do contador gera: deflate, sem ZIP64). */
+function readZip(zip: Buffer) {
+  const files = new Map<string, Buffer>();
+  let offset = 0;
+  while (zip.readUInt32LE(offset) === 0x04034b50) {
+    const size = zip.readUInt32LE(offset + 18);
+    const nameLength = zip.readUInt16LE(offset + 26);
+    const extra = zip.readUInt16LE(offset + 28);
+    const name = zip.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
+    const start = offset + 30 + nameLength + extra;
+    files.set(name, inflateRawSync(zip.subarray(start, start + size)));
+    offset = start + size;
+  }
+  return files;
+}
 
 const companyBody = {
   environment: 'homologacao',
@@ -698,6 +715,76 @@ describeDb('módulo fiscal (ACBr API)', () => {
       const pdf = await admin.get(`/api/fiscal/inbound/${note.id}/pdf`);
       expect(pdf.status).toBe(200);
       expect(pdf.body.toString()).toContain('%PDF');
+    });
+  });
+  describe('pacote do contador', () => {
+    it('junta os XMLs do mês (baixa os que faltam) e o resumo; só o admin', async () => {
+      const admin = await login(app, 'admin');
+      await configureCompany(admin);
+      await prepareCatalog();
+      const seller = await login(app, 'vendedor.a');
+      const order = await createOrder(seller);
+      acbr.route('POST', '/nfce', { status: 200, body: authorized('nfce_1', 65, 10) });
+      expect((await seller.post('/api/fiscal/documents').send({ order_id: order.id, model: 65 })).status).toBe(201);
+
+      // Nota de compra lançada pelo XML: o XML fica guardado com a entrada.
+      const supplierKey = '35261012345678000199550010000045671000045678';
+      const supplierXml = `<nfeProc><NFe><infNFe Id="NFe${supplierKey}"><ide><nNF>4567</nNF></ide></infNFe></NFe></nfeProc>`;
+      const entry = await admin.post('/api/stock/entries').send({
+        store_id: f.storeA,
+        supplier_name: 'Distribuidora',
+        supplier_document: '12345678000199',
+        invoice_number: '4567',
+        invoice_series: '1',
+        access_key: supplierKey,
+        issued_at: new Date().toISOString(),
+        total_amount: 300,
+        xml: supplierXml,
+        items: [{ product_id: f.products.cimento, quantity: 10, unit_cost: 30 }],
+      });
+      expect(entry.status).toBe(201);
+
+      const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()).slice(0, 7);
+      expect((await seller.get(`/api/fiscal/accountant/summary?month=${month}`)).status).toBe(403);
+      const summary = await admin.get(`/api/fiscal/accountant/summary?month=${month}`);
+      expect(summary.body).toMatchObject({
+        environment: 'homologacao',
+        issued: { authorized: 1, cancelled: 0 },
+        received: { count: 1, amount: 300 },
+        to_download: 1,
+        without_xml: 0,
+      });
+
+      acbr.route('GET', '/nfce/nfce_1/xml', { status: 200, body: Buffer.from(`<nfeProc><chNFe>${ACCESS_KEY}</chNFe></nfeProc>`), contentType: 'application/xml' });
+      const prepared = await admin.post('/api/fiscal/accountant/prepare').send({ month });
+      expect(prepared.body).toMatchObject({ saved: 1, failures: [], to_download: 0 });
+
+      const pkg = await admin.get(`/api/fiscal/accountant/package?month=${month}`).buffer(true).parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      });
+      expect(pkg.status).toBe(200);
+      expect(pkg.headers['content-type']).toBe('application/zip');
+      const files = readZip(pkg.body as Buffer);
+      expect([...files.keys()].sort()).toEqual([
+        'LEIA-ME.txt',
+        `emitidas/autorizadas/NFCe-${ACCESS_KEY}.xml`,
+        `recebidas/NFe-${supplierKey}.xml`,
+        'resumo.csv',
+      ]);
+      expect(files.get(`recebidas/NFe-${supplierKey}.xml`)!.toString()).toBe(supplierXml);
+      const csv = files.get('resumo.csv')!.toString('utf8');
+      expect(csv).toContain(`Saída;NFC-e;10;1;${ACCESS_KEY}`);
+      expect(csv).toContain(`Entrada;NF-e;4567;1;${supplierKey}`);
+      expect(files.get('LEIA-ME.txt')!.toString()).toContain('HOMOLOGAÇÃO');
+
+      // O XML baixado fica guardado: a próxima busca não vai à ACBr API.
+      acbr.reset();
+      const docId = (await adminPool.query('select id from fiscal_documents where tenant_id = $1', [f.tenantId])).rows[0].id;
+      const xml = await admin.get(`/api/fiscal/documents/${docId}/xml`);
+      expect(xml.status).toBe(200);
+      expect(acbr.calls()).toHaveLength(0);
     });
   });
 });

@@ -92,6 +92,9 @@ type CurrentStageRow = {
 
 /** Etapa atual com a próxima e a anterior do mesmo fluxo. Roda dentro de withSession. */
 async function loadCurrentStage(db: pg.PoolClient, orderId: number, lock = false): Promise<CurrentStageRow | null> {
+  // Trava só a linha do pedido e lê a etapa depois, numa consulta nova: com o FOR UPDATE no
+  // join, quem esperava a trava reavaliaria o join com a etapa antiga e não acharia o pedido.
+  if (lock) await db.query('select 1 from orders where id = $1 for update', [orderId]);
   const { rows } = await db.query<CurrentStageRow>(
     `select o.status as order_status, ws.id as stage_id, ws.name as stage_name, ws.sector_id, s.name as sector_name, ws.sla_minutes,
             o.stage_entered_at as entered_at,
@@ -109,8 +112,7 @@ async function loadCurrentStage(db: pg.PoolClient, orderId: number, lock = false
           where workflow_id = ws.workflow_id and position < ws.position
           order by position desc limit 1
        ) pv on true
-      where o.id = $1
-      ${lock ? 'for update of o' : ''}`,
+      where o.id = $1`,
     [orderId],
   );
   return rows[0] ?? null;
@@ -213,14 +215,13 @@ export async function moveOrderStage(
 /** Placeholders aceitos na mensagem da etapa. */
 export const MESSAGE_PLACEHOLDERS = ['{cliente}', '{pedido}', '{loja}', '{etapa}'] as const;
 
-/** Troca os placeholders da mensagem da etapa. {cliente} é o primeiro nome, como na legenda do PDF. */
+/** Troca os placeholders da mensagem da etapa. {cliente} é como o cliente é chamado (ver greetingName). */
 export function renderStageMessage(
   template: string,
-  values: { clientName: string; orderId: number; storeName: string; stageName: string },
+  values: { clientGreeting: string; orderId: number; storeName: string; stageName: string },
 ) {
-  const firstName = values.clientName.trim().split(/\s+/)[0] ?? '';
   const replacements: Record<string, string> = {
-    '{cliente}': firstName,
+    '{cliente}': values.clientGreeting,
     '{pedido}': formatOrderNumber(values.orderId),
     '{loja}': values.storeName,
     '{etapa}': values.stageName,

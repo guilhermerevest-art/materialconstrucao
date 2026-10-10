@@ -112,6 +112,16 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 | Esc | Cancela o produto escolhido |
 | F9 ou Ctrl+Enter | Salvar |
 
+## Implantação
+
+**Administração → Implantação** (e um aviso no início do admin enquanto falta algo) mostra, área por área, o
+que já está configurado e leva direto à tela de cada passo. Tudo é lido do cadastro, sem marcar nada à mão:
+lojas, vendedores, produtos e formas de pagamento (o essencial); WhatsApp; estoque inicial, mínimos e
+fornecedores; fluxo de pedidos, setores e veículos; nota fiscal (empresa, conta da ACBr API, certificado com o
+aviso de vencimento, NCM dos produtos, nota de teste em homologação e produção); financeiro e PIX; fiado; preço
+e comissão. Os módulos desligados e os passos opcionais não contam no progresso. O certificado e as senhas
+continuam com a loja: a tela só diz se já foram informados.
+
 ## Regras de negócio
 
 - **Vendedor** vê e edita os pedidos da própria loja; só lança pedidos em seu nome e na sua loja.
@@ -130,6 +140,9 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   Os dados fiscais do cliente (CPF/CNPJ, IE, endereço com código IBGE) ficam com o módulo fiscal.
 - **Limite de crédito** (só o admin define, em Clientes): quanto o cliente pode dever no crediário.
   Em branco, ele não compra no crediário.
+- **Contato do cliente** (opcional, no cadastro): com quem falar. As mensagens (legenda do PDF, aviso de etapa,
+  retomada) dizem "Olá, {contato}!"; sem contato, empresa (CNPJ no cadastro completo) é chamada pelo nome inteiro
+  e pessoa pelo primeiro nome.
 - WhatsApp do cliente é guardado só com dígitos e DDI (`(11) 98765-4321` vira `5511987654321`).
   Número de outro país deve começar com `+`.
 - **O mesmo WhatsApp não pode ficar em dois cadastros de cliente.** Ao salvar um número que
@@ -149,6 +162,47 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   Cartão de débito, Cartão de crédito e Boleto. O pedido guarda o nome da forma da época, e forma usada
   em pedidos não pode ser excluída, só desativada (sai da lista, mas o orçamento que já a tinha continua com ela).
 
+## Preço
+
+Tudo opcional: sem tabela, faixa ou limite configurado, o pedido usa o preço do catálogo como sempre.
+
+- **Tabelas de preço** (Administração → Tabelas de preço): varejo, atacado, construtora... Cada tabela tem um
+  ajuste sobre o catálogo (ex.: 8% abaixo) e, se quiser, preço próprio por produto. O admin põe o cliente na
+  tabela pelo cadastro dele; o PDV mostra "Tabela de preço: Atacado" e o preço da tabela na busca e no carrinho.
+  Tabela desativada ou excluída: o cliente volta ao catálogo. O pedido guarda o nome da tabela usada.
+- **Preço por quantidade** (produto → aba Preço): a partir de N unidades, o item sai pelo preço da faixa. Com
+  tabela, vale o menor dos dois. O carrinho avisa a próxima faixa ("A partir de 50 SC: R$ 34,90").
+- **O preço é sempre do servidor:** o PDV mostra a prévia, mas quem calcula é o servidor ao salvar. No
+  orçamento editado, o item mantém o preço da época; se a quantidade ou o cliente mudar, fica o menor entre o
+  da época e o de agora (nunca aumenta).
+- **Desconto com liberação:** limite padrão em Configurações → Vendas e, se quiser, um limite próprio por
+  vendedor. Acima do limite, o PDV pede usuário e senha de quem pode liberar (admin, ou vendedor marcado para
+  liberar, até o limite dele). O pedido mostra quem liberou; editar sem passar do liberado não pede de novo.
+  O admin não tem limite.
+- **Margem e reajuste:** margem sobre o custo padrão (Configurações → Vendas) ou por produto. Na entrada de
+  nota, cada item mostra a venda de hoje, a margem com o custo da nota e o preço sugerido, com a opção de
+  atualizar o preço na hora. **Reajustar preços** (Produtos) aplica % sobre o preço atual ou a margem sobre o
+  último custo, a todos ou aos da busca, com arredondamento para cima e prévia antes de gravar.
+- **Histórico de preço** no produto: toda mudança, por qualquer caminho, com motivo, quem e quando.
+- A venda guarda o custo de cada item na confirmação, para os relatórios de margem.
+
+## Comissão e relatórios
+
+- **Comissão:** percentual padrão em Configurações → Vendas e, se quiser, um próprio por vendedor
+  (Administração → Vendedores). Base: venda confirmada no período menos as devoluções do período dos pedidos
+  do vendedor; pedido cancelado não conta. Sem percentual configurado, não há comissão (o relatório mostra só
+  as vendas). O vendedor vê só a própria comissão.
+- **Relatórios** (menu Relatórios), em três áreas, todos com exportação para CSV (abre direto no Excel):
+  - **Vendas:** por dia, loja, vendedor, produto, cliente e forma de pagamento (pedidos ou orçamentos);
+    **conversão de orçamentos** (feitos, viraram pedido, perdidos, em aberto, taxa e dias até fechar, por
+    vendedor); **comissão**; **devoluções** por produto (com o que voltou avariado).
+  - **Estoque e compras:** **curva ABC** do período com giro e cobertura em dias; **estoque parado** (com saldo
+    e sem venda há 30 a 365 dias, ou nunca vendido) com o valor parado a custo; **estoque valorizado** a custo
+    e a preço; **margem** por produto (venda líquida menos o custo gravado na venda); **compras** por fornecedor.
+  - **Financeiro:** **inadimplência** de hoje (parcelas e fiado vencidos por faixa: até 30, 31–60, 61–90 e mais
+    de 90 dias) e **fluxo de caixa** por dia (entrou, saiu, saldo, vence a receber e a pagar).
+- Estoque valorizado, margem, compras e fluxo de caixa são do administrador; o vendedor vê os da própria loja.
+
 ## Estoque
 
 Saldo por loja (não há depósito central), no menu **Estoque**. Todo mundo consulta, inclusive o saldo das
@@ -163,15 +217,35 @@ do administrador.
 - **Sem trava:** o saldo pode ficar negativo; o PDV mostra "Est." na busca, em vermelho quando zerado ou
   negativo, e o filtro **Negativos** mostra o que precisa de acerto.
 - **Entrada de nota:** importe o XML da NF-e de compra (lido no navegador) ou lance à mão. Cada item da nota é
-  ligado a um produto da loja, com a conversão de unidade ("UN por MIL" = 1000 para o milheiro de tijolo). Na
-  próxima nota do mesmo fornecedor, o item já vem reconhecido pelo código dele, com a mesma conversão; senão,
+  ligado a um produto da loja, com a conversão de unidade ("UN em cada MIL" = 1000 para o milheiro de tijolo).
+  Na próxima nota do mesmo fornecedor, o item já vem reconhecido pelo código dele, com a mesma conversão; senão,
   pelo código ou nome do produto. O custo de cada item considera desconto, frete, seguro e outras despesas
   da nota e vira o **último custo** do produto. A mesma nota (chave de acesso) não entra duas vezes.
+- **Compra numa unidade, venda em outra:** no cadastro do produto, a **unidade de compra** e quanto vem nela
+  (vende KG, compra SC com 50). A nota em SC já vem com 50 na conversão; no lançamento à mão, escolha SC ou KG
+  na linha (10 SC entram 500 KG, e o custo do saco vira o custo do KG). O estoque fica sempre na unidade de
+  venda. O pedido de compra sai em sacos para o fornecedor.
 - **Ajuste:** "Contei, o saldo é" (inventário) ou "Somar / tirar" (quebra, avaria), sempre com motivo no extrato.
 - **Mínimo por loja:** abaixo dele o produto aparece com o selo **Comprar** e no filtro **Abaixo do mínimo**.
 - **Transferência entre lojas:** sai de uma e entra na outra no mesmo momento, com as duas pontas no extrato.
 - **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
 - Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
+
+## Compras
+
+Menu **Operação → Compras** (administrador). Não muda nada na venda: quem não usa, não vê.
+
+- **Fornecedores:** a nota de compra cadastra o fornecedor sozinha pelo CNPJ (as notas que já tinham entrado
+  também viram cadastro). Dá para cadastrar à mão, com contato e WhatsApp (o CNPJ busca a razão social na
+  Receita, com o fiscal configurado). Inativo não aparece para pedidos novos.
+- **O que comprar:** os produtos abaixo do mínimo da loja, já descontado o que foi pedido e ainda não chegou,
+  com o último fornecedor e o último custo de cada um. Marque, ajuste a quantidade (em sacos, quando o produto
+  tem unidade de compra) e **Montar pedido de compra**: sai um rascunho por fornecedor.
+- **Pedido de compra:** rascunho → enviado → recebido em parte → recebido. Manda ao fornecedor pelo WhatsApp da
+  loja (mensagem com a lista e o PDF), ou baixe o PDF; sem a EvolutionAPI, abre o WhatsApp do aparelho com a
+  mensagem pronta. Edita e cancela enquanto nada chegou; recebido em parte, **Encerrar sem o resto**.
+- **Receber:** o botão do pedido abre a entrada de nota com o que falta chegar. Importando o XML, o pedido
+  aberto do mesmo fornecedor é escolhido sozinho. O que chega é baixado do pedido.
 
 ## Entregas e retiradas
 
@@ -197,6 +271,10 @@ venda; aqui é a logística de quando e como a mercadoria sai.
 - **Cancelar pedido** desmarca as entregas agendadas; com entrega já feita, o cancelamento é bloqueado até
   estornar as entregas (a mercadoria precisa voltar).
 - Atrasadas (agendadas para antes de hoje e não feitas) aparecem em destaque na agenda.
+- **Nota fiscal:** com a NF-e (ou NFC-e) do pedido autorizada, o número aparece na agenda, no comprovante (abre o
+  DANFE) e em cada entrega do romaneio. Opcional, em **Configurações → Vendas → Entregas**: **exigir nota fiscal
+  para o caminhão sair** bloqueia "Saiu para entrega" enquanto algum pedido do romaneio está sem nota
+  autorizada (a mensagem diz quais).
 - O vendedor vê as entregas e romaneios da própria loja; o admin, de todas. Veículos são cadastrados pelo admin.
 
 ## Separação e conferência
@@ -215,7 +293,7 @@ Botão **Separação** no pedido confirmado (e **Separar** em cada entrega agend
 ## Financeiro (opcional)
 
 Desligado por padrão: a venda funciona como sempre. O admin liga em **Administração → Configurações → aba
-Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
+Financeiro**; aí aparece o menu **Financeiro** (Caixa, Contas a receber e, para o admin, Contas a pagar).
 
 - **Forma de pagamento com condição:** cada forma tem um tipo (dinheiro, PIX, cartão, boleto, crediário,
   outro) e a condição: número de parcelas, dias até o 1º vencimento e entre parcelas. "Crediário 3x" =
@@ -230,12 +308,60 @@ Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
   ou o pedido, recebe parcial ou total, em qualquer forma (crediário é como se vende, não como se paga), com o
   troco calculado no dinheiro. **Sangria** e **suprimento** com motivo. No fechamento, o operador informa o
   dinheiro contado e o sistema mostra a diferença para o esperado (troco + dinheiro recebido + suprimentos −
-  sangrias). Estorno de recebimento só com o caixa ainda aberto, pelo operador ou pelo admin.
+  sangrias − devoluções e contas pagas em dinheiro). Estorno de recebimento só com o caixa ainda aberto, pelo operador ou pelo admin.
 - **PIX:** com a chave PIX da loja configurada, o recebimento em PIX mostra o QR Code com o valor (e o "copia e
   cola"), e o PDF do pedido confirmado na forma PIX sai com o QR Code do que falta pagar. É o PIX estático do
   Banco Central: a confirmação é feita olhando o extrato. Baixa automática precisa de integração com o banco
   (PSP) e não faz parte desta versão.
 - O vendedor vê as parcelas e caixas da própria loja; o admin, de todas.
+- **Contas a pagar** (administrador): as duplicatas da nota de compra entram na entrada de nota (marcadas
+  sozinhas quando o XML traz a cobrança; sem duplicata, uma parcela com o total para 30 dias, editável). Contas
+  da loja (aluguel, energia, frete...) em **Nova conta**, em uma ou várias parcelas. Resumo de vencido, hoje,
+  7 dias e total em aberto. Pagamento parcial ou total: em **dinheiro do caixa** sai da gaveta do caixa aberto
+  (entra no fechamento como "contas pagas"); transferência, PIX, boleto ou cartão saem da conta da loja.
+  Estorno volta a conta para aberto (o de dinheiro só com aquele caixa aberto). Conta sem pagamento é
+  corrigida ou cancelada.
+
+## Fiado (caderneta)
+
+Módulo próprio, desligado por padrão e independente do financeiro. O admin liga em Configurações → aba Fiado;
+aí aparece a forma de pagamento **Fiado** no PDV e o menu **Financeiro → Fiado**.
+
+- **Limite:** o mesmo limite de crédito do cliente (Clientes → Crédito) vale para fiado e crediário juntos.
+  Sem limite, o cliente não compra fiado. O PDV mostra quanto ele deve e o disponível ao escolher "Fiado".
+- **Compra fiada:** o pedido confirmado na forma Fiado soma na conta do cliente e vence no **dia de vencimento
+  do mês seguinte** (padrão da loja ou o do cliente; ex.: compras de outubro vencem dia 10 de novembro).
+  Cancelar o pedido tira a compra da conta; se ele já tinha pago, fica com crédito.
+- **Bloqueio:** com atraso além da tolerância (padrão: qualquer atraso), o cliente não compra mais fiado até
+  pagar.
+- **Receber:** parcial ou tudo, em qualquer forma (o troco do dinheiro é calculado). O pagamento abate sempre
+  as compras mais antigas. Com o financeiro ligado, o recebimento entra no caixa aberto do operador (e no
+  dinheiro esperado da gaveta); sem financeiro, fica só na conta.
+- **Encargos (opcionais):** multa (%) e juros ao mês (proporcionais aos dias) sobre o que atrasou, lançados junto
+  com o recebimento. Cada pagamento acerta o atraso até a data dele, então nada é cobrado duas vezes. O admin
+  pode dispensar.
+- **Estorno:** com caixa, pelo operador ou admin enquanto o caixa está aberto; sem caixa, só o admin. Os
+  encargos cobrados junto saem também.
+- **Extrato** com saldo depois de cada lançamento, em PDF, e **Cobrar**: manda pelo WhatsApp da loja a
+  mensagem (editável, com `{cliente}`, `{loja}`, `{saldo}`, `{vencido}`, `{vencimento}`) e o extrato.
+- **Ajuste** (admin): saldo da caderneta de papel, acerto ou dívida perdoada, sempre com motivo.
+
+## Devolução e troca
+
+Quadro **Devoluções** no pedido confirmado, botão **Devolução ou troca**.
+
+- **O que volta:** só o que o cliente já levou (entregue ou retirado) e ainda não devolveu; em pedidos de antes
+  do controle de entrega, o vendido. O valor de cada item já considera o desconto do pedido.
+- **Estoque:** volta para a prateleira da loja do pedido; desmarque "volta" no que veio avariado.
+- **Como o valor volta:** dinheiro (com o financeiro ligado, sai do caixa aberto e do dinheiro esperado da
+  gaveta), PIX ou estorno no cartão (feitos por fora), **crédito para troca**, abatimento no **fiado** ou nas
+  **parcelas em aberto** do pedido (da última para a primeira), ou sem devolver valor (garantia).
+- **Troca:** o crédito para troca vira saldo do cliente (vale) e o sistema já abre o pedido novo com ele. No
+  PDV, cliente com crédito mostra o saldo e "Usar neste pedido"; o pedido mostra "Pago com crédito" e o que
+  falta pagar (também no PDF). As parcelas e o fiado do pedido novo são só do que falta. O crédito sai do
+  saldo na confirmação; cancelar o pedido devolve o crédito.
+- Pedido com devolução não é cancelado: o resto também se devolve.
+- A NF-e de devolução (quando o pedido tem nota) ainda é emitida fora do sistema.
 
 ## Retomada de orçamentos
 
@@ -445,6 +571,22 @@ Primeiro chega o **resumo**. Dar **ciência da operação** libera a nota comple
 próxima busca; depois o admin confirma, desconhece ou registra "operação não realizada"
 (com justificativa). Também dá para ligar a ciência automática. Notas canceladas pelo emitente ficam
 marcadas.
+
+Nota completa: **Dar entrada** abre a entrada de estoque já com os itens, a conversão de unidade e as
+duplicatas da nota, sem baixar e importar o XML. Depois de lançada, a nota mostra **Entrada nº** no monitor.
+
+### Pacote do contador
+
+**Notas fiscais → Contador** (admin): escolha o mês e **Baixar o pacote** gera um ZIP com os XMLs das notas
+emitidas (autorizadas e canceladas, pela data de emissão) e recebidas (as que deram entrada no estoque no mês e
+as do monitor emitidas no mês), mais `resumo.csv` (uma linha por nota: tipo, modelo, número, série, chave,
+datas, CNPJ/CPF, nome, valor, situação e se o XML está no pacote) e um `LEIA-ME.txt` com os totais. É o que o
+escritório importa para a escrituração e o SPED.
+
+Os XMLs ficam guardados no banco: o da nota emitida é baixado da ACBr API na primeira vez (o botão busca os que
+faltam, em lotes, antes de montar o ZIP; sem a ACBr API, o pacote sai com o que já está guardado); o da nota
+de compra vai junto com a entrada de estoque pelo XML. Entrada lançada à mão (sem XML) aparece só no resumo.
+O pacote usa o ambiente atual: em homologação, as notas são de teste e o LEIA-ME avisa.
 
 ### Limitações desta versão
 

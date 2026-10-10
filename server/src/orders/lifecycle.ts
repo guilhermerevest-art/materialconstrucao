@@ -2,7 +2,9 @@ import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { cancelOrderDeliveries } from '../deliveries/queries.js';
+import { assertFiadoPurchase, cancelFiadoPurchase, createFiadoPurchase } from '../fiado/queries.js';
 import { assertStoreCredit, cancelOrderReceivables, createOrderReceivables, loadFinanceSettings } from '../finance/queries.js';
+import { restoreClientCredit, useClientCredit } from '../returns/queries.js';
 import { applyOrderStock, returnOrderStock } from '../stock/queries.js';
 import { enterWorkflow } from '../workflow/queries.js';
 
@@ -12,13 +14,25 @@ import { enterWorkflow } from '../workflow/queries.js';
  */
 export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user: SessionUser, timeZone: string) {
   // Financeiro desligado (padrão): nada de parcela nem trava de crediário, como no MVP.
+  // Crédito do cliente (vale-troca) usado no pedido: sai do saldo dele antes de tudo.
+  await useClientCredit(db, orderId, user);
   const finance = await loadFinanceSettings(db);
   if (finance.enabled) await assertStoreCredit(db, orderId, timeZone);
+  // Fiado (caderneta): módulo próprio, confere limite e atraso antes de vender.
+  await assertFiadoPurchase(db, orderId, timeZone);
+  // Custo de cada item na hora da venda, para margem e lucro nos relatórios.
+  await db.query(
+    `update order_items oi set unit_cost = p.cost_price
+       from products p
+      where oi.order_id = $1 and p.id = oi.product_id`,
+    [orderId],
+  );
   await enterWorkflow(db, orderId, user.id);
   await applyOrderStock(db, orderId, user);
   // Daqui em diante o pedido tem saldo a entregar (retiradas e entregas parciais).
   await db.query('update orders set delivery_tracking = true where id = $1', [orderId]);
   if (finance.enabled) await createOrderReceivables(db, orderId, timeZone);
+  await createFiadoPurchase(db, orderId, timeZone);
 }
 
 type CancellableOrder = {
@@ -68,10 +82,16 @@ export async function cancelOrder(db: pg.PoolClient, orderId: number, user: Sess
   if (order.status === 'order') {
     if (user.role !== 'admin') throw new HttpError(403, 'Só o administrador cancela pedidos confirmados.');
     await assertNoActiveInvoice(db, orderId);
+    const returns = await db.query('select 1 from order_returns where order_id = $1 limit 1', [orderId]);
+    if (returns.rowCount) {
+      throw new HttpError(409, 'Este pedido tem devolução registrada. Para desfazer o resto da venda, registre a devolução dos itens que faltam.');
+    }
   }
 
   if (order.status === 'order') {
     await cancelOrderReceivables(db, orderId, `Pedido cancelado: ${reason}`);
+    await cancelFiadoPurchase(db, orderId, user, `Pedido cancelado: ${reason}`);
+    await restoreClientCredit(db, orderId);
     await cancelOrderDeliveries(db, orderId, user, `Pedido cancelado: ${reason}`);
   }
   if (order.stock_applied) await returnOrderStock(db, orderId, user, `Pedido cancelado: ${reason}`);

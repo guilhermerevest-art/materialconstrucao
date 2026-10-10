@@ -14,6 +14,12 @@ export function formatDateTime(value: Date, timeZone: string) {
   return `${date} às ${time}`;
 }
 
+/** "2026-10-10" -> "10/10/2026" (data sem hora, sem fuso). */
+export function formatDay(iso: string) {
+  const [year, month, day] = iso.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
 /** Dia de hoje ("2026-10-10") no fuso da loja. */
 export function todayIn(timeZone: string, date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);

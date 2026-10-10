@@ -42,13 +42,13 @@ export async function loadFollowupSettings(db: pg.PoolClient): Promise<FollowupS
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? '';
 
-/** Troca os placeholders. {cliente} e {vendedor} são o primeiro nome, como na legenda do PDF. */
+/** Troca os placeholders. {cliente} é como o cliente é chamado (ver greetingName); {vendedor}, o primeiro nome. */
 export function renderFollowupMessage(
   template: string,
-  values: { clientName: string; sellerName: string; storeName: string; orderId: number; total: number },
+  values: { clientGreeting: string; sellerName: string; storeName: string; orderId: number; total: number },
 ) {
   const replacements: Record<string, string> = {
-    '{cliente}': firstName(values.clientName),
+    '{cliente}': values.clientGreeting,
     '{vendedor}': firstName(values.sellerName),
     '{loja}': values.storeName,
     '{pedido}': formatOrderNumber(values.orderId),

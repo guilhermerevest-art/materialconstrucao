@@ -5,7 +5,7 @@ import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
-import { likePattern, optionalQuery, pagination, parseId } from '../lib/validation.js';
+import { likePattern, optionalQuery, optionalText, pagination, parseId } from '../lib/validation.js';
 import { clientDetailsSchema, type ClientDetailsInput } from '../fiscal/validation.js';
 
 const clientSchema = z.object({
@@ -22,6 +22,10 @@ const clientSchema = z.object({
       }
       return normalized;
     }),
+  // Com quem falar (vai no "Olá" das mensagens). Ausente, mantém o que está salvo.
+  contact_name: optionalText(80).optional(),
+  // Tabela de preço (só o admin muda). Ausente, mantém; nulo, volta ao catálogo.
+  price_list_id: z.number().int().positive().nullable().optional(),
   // Aba "Cadastro completo" (dados da NF-e). Ausente, mantém o que está salvo.
   details: clientDetailsSchema.optional(),
 });
@@ -45,7 +49,7 @@ const DETAIL_COLUMNS = [
   'address_state',
 ] as const satisfies readonly (keyof ClientDetailsInput)[];
 
-const CLIENT_COLUMNS = `id, name, whatsapp, created_at, ${DETAIL_COLUMNS.join(', ')}`;
+const CLIENT_COLUMNS = `id, name, whatsapp, contact_name, price_list_id, created_at, ${DETAIL_COLUMNS.join(', ')}`;
 
 const listSchema = z.object({ q: optionalQuery, ...pagination });
 
@@ -68,6 +72,14 @@ function toClient(row: Record<string, unknown>) {
 function writableColumns(body: z.infer<typeof clientSchema>) {
   const columns: string[] = ['name', 'whatsapp'];
   const values: unknown[] = [body.name, body.whatsapp];
+  if (body.contact_name !== undefined) {
+    columns.push('contact_name');
+    values.push(body.contact_name);
+  }
+  if (body.price_list_id !== undefined) {
+    columns.push('price_list_id');
+    values.push(body.price_list_id);
+  }
   if (body.details) {
     for (const column of DETAIL_COLUMNS) {
       columns.push(column);
@@ -119,6 +131,15 @@ async function writeClient(
   }
 }
 
+/** Só o admin põe o cliente numa tabela de preço, e a tabela precisa existir. */
+async function assertPriceList(ctx: AppContext, me: SessionUserLike, priceListId: number | null | undefined) {
+  if (priceListId === undefined) return;
+  if (me.role !== 'admin') throw new HttpError(403, 'Só o administrador muda a tabela de preço do cliente.');
+  if (priceListId === null) return;
+  const { rowCount } = await queryAs(ctx.pool, me, 'select 1 from price_lists where id = $1', [priceListId]);
+  if (!rowCount) throw new HttpError(400, 'Tabela de preço não encontrada.');
+}
+
 /** Clientes são compartilhados por toda a rede. Vendedores cadastram e editam; só o admin exclui. */
 export function clientsRouter(ctx: AppContext) {
   const router = Router();
@@ -129,6 +150,7 @@ export function clientsRouter(ctx: AppContext) {
     const digits = q?.replace(/\D/g, '') ?? '';
     const { rows } = await queryAs(ctx.pool, me,
       `select ${CLIENT_COLUMNS}, credit_limit,
+              (select pl.name from price_lists pl where pl.id = clients.price_list_id) as price_list_name,
               (select count(*) from client_sites cs where cs.client_id = clients.id and cs.active) as sites_count,
               count(*) over () as total_count
          from clients
@@ -159,6 +181,7 @@ export function clientsRouter(ctx: AppContext) {
   router.post('/', async (req, res) => {
     const me = currentUser(req);
     const body = clientSchema.parse(req.body);
+    await assertPriceList(ctx, me, body.price_list_id);
     const conflicts = await findWhatsappConflicts(ctx, me, body.whatsapp, null);
     if (conflicts.length) throw duplicateWhatsapp(conflicts);
     const { columns, values } = writableColumns(body);
@@ -184,6 +207,7 @@ export function clientsRouter(ctx: AppContext) {
     const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = clientSchema.parse(req.body);
+    await assertPriceList(ctx, me, body.price_list_id);
     const exists = await withSession(ctx.pool, me, (db) =>
       db.query('select 1 from clients where id = $1', [id]),
     );

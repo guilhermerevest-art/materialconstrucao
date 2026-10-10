@@ -6,6 +6,7 @@ import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { productFiscalSchema, type ProductFiscalInput } from '../fiscal/validation.js';
+import { setPriceReason } from './pricing.js';
 
 const productSchema = z.object({
   code: optionalText(40),
@@ -18,6 +19,23 @@ const productSchema = z.object({
     .transform((u) => u.toUpperCase()),
   price: z.number('Informe o preço.').min(0, 'O preço não pode ser negativo.').max(9_999_999_999),
   active: z.boolean().default(true),
+  // Unidade de compra (ex.: vende KG, compra SC com 50). Ausente, mantém; nulo, apaga.
+  purchase: z
+    .object({
+      unit: z
+        .string('Informe a unidade de compra.')
+        .trim()
+        .min(1, 'Informe a unidade de compra.')
+        .max(10, 'Use no máximo 10 caracteres na unidade.')
+        .transform((u) => u.toUpperCase()),
+      factor: z
+        .number('Informe quanto vem em cada unidade de compra.')
+        .positive('A quantidade por unidade de compra precisa ser maior que zero.')
+        .max(1_000_000)
+        .transform((v) => Math.round(v * 10_000) / 10_000),
+    })
+    .nullable()
+    .optional(),
   // Aba "Fiscal". Ausente, mantém o que está salvo; presente, substitui tudo.
   fiscal: productFiscalSchema.optional(),
 });
@@ -27,6 +45,8 @@ const listSchema = z.object({
   status: z.enum(['active', 'inactive', 'all']).default('active'),
   // Com a loja, cada produto vem com o saldo de estoque dela (o PDV mostra na busca).
   stock_store_id: optionalQueryId,
+  // Com o cliente, cada produto vem com o preço da tabela dele (o PDV mostra na busca).
+  client_id: optionalQueryId,
   ...pagination,
 });
 
@@ -49,7 +69,7 @@ const FISCAL_COLUMNS = [
   'fiscal_notes',
 ] as const satisfies readonly (keyof ProductFiscalInput)[];
 
-const PRODUCT_COLUMNS = `id, code, name, unit, price, active, created_at, ${FISCAL_COLUMNS.join(', ')}`;
+const PRODUCT_COLUMNS = `id, code, name, unit, price, active, created_at, purchase_unit, purchase_factor, ${FISCAL_COLUMNS.join(', ')}`;
 const NOT_FOUND = 'Produto não encontrado.';
 
 type ProductRow = Record<string, unknown>;
@@ -69,6 +89,13 @@ function toProduct(row: ProductRow) {
 function writableColumns(body: z.infer<typeof productSchema>) {
   const columns: string[] = ['code', 'name', 'unit', 'price', 'active'];
   const values: unknown[] = [body.code, body.name, body.unit, body.price, body.active];
+  if (body.purchase !== undefined) {
+    if (body.purchase && body.purchase.unit === body.unit) {
+      throw new HttpError(400, 'A unidade de compra é a mesma da venda. Deixe em branco se não muda.');
+    }
+    columns.push('purchase_unit', 'purchase_factor');
+    values.push(body.purchase?.unit ?? null, body.purchase?.factor ?? null);
+  }
   if (body.fiscal) {
     for (const column of FISCAL_COLUMNS) {
       columns.push(column);
@@ -93,8 +120,21 @@ export function productsRouter(ctx: AppContext) {
               case when $6::bigint is not null and track_stock then
                 coalesce((select b.quantity from stock_balances b where b.store_id = $6 and b.product_id = products.id), 0)
               end as stock,
+              case when cpl.list_id is not null then coalesce(pli.list_item_price, round(products.price * (1 + cpl.list_adjust / 100), 2)) end
+                as client_price,
+              (select json_agg(json_build_object('min_quantity', t.min_quantity, 'price', t.price) order by t.min_quantity)
+                 from product_price_tiers t where t.product_id = products.id) as tiers,
               count(*) over () as total_count
          from products
+         left join lateral (
+           select pl.id as list_id, pl.adjust_percent as list_adjust
+             from clients c join price_lists pl on pl.id = c.price_list_id and pl.active
+            where c.id = $7
+         ) cpl on true
+         left join lateral (
+           select i.price as list_item_price from price_list_items i
+            where i.price_list_id = cpl.list_id and i.product_id = products.id
+         ) pli on true
         where ($1::text is null
                or lower(code) = lower($1)
                or search_norm(name) like search_norm($2)
@@ -102,7 +142,7 @@ export function productsRouter(ctx: AppContext) {
           and ($3::text = 'all' or active = ($3::text = 'active'))
         order by (lower(code) = lower($1)) desc nulls last, name, id
         limit $4 offset $5`,
-      [q ?? null, q ? likePattern(q) : null, status, page_size, (page - 1) * page_size, query.stock_store_id ?? null],
+      [q ?? null, q ? likePattern(q) : null, status, page_size, (page - 1) * page_size, query.stock_store_id ?? null, query.client_id ?? null],
     );
     res.json({
       items: rows.map(({ total_count: _, ...row }) => toProduct(row)),
@@ -133,6 +173,7 @@ export function productsRouter(ctx: AppContext) {
     const body = productSchema.parse(req.body);
     const { columns, values } = writableColumns(body);
     const result = await withSession(ctx.pool, me, async (db) => {
+      await setPriceReason(db, 'Cadastro do produto');
       const { rows } = await db.query(
         `update products set ${columns.map((c, i) => `${c} = $${i + 2}`).join(', ')}
           where id = $1

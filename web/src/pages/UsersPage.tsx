@@ -10,6 +10,7 @@ import { Checkbox, Field, Input, NativeSelect } from '@/components/ui/input';
 import { Alert, Badge, Skeleton } from '@/components/ui/misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { api, ApiError } from '@/lib/api';
+import { decimalToInput, parseDecimal } from '@/lib/format';
 import { useUser } from '@/lib/auth';
 import { useDocumentTitle } from '@/lib/hooks';
 import type { ManagedUser, Role, Sector, Store } from '@/lib/types';
@@ -38,6 +39,9 @@ function UserFormDialog({
   const [password, setPassword] = useState('');
   const [active, setActive] = useState(true);
   const [sectorIds, setSectorIds] = useState<number[]>([]);
+  const [maxDiscount, setMaxDiscount] = useState('');
+  const [canApprove, setCanApprove] = useState(false);
+  const [commission, setCommission] = useState('');
   const [error, setError] = useState<string | null>(null);
   const isSelf = user?.id === me.id;
 
@@ -51,6 +55,9 @@ function UserFormDialog({
     setPassword('');
     setActive(user?.active ?? true);
     setSectorIds(user?.sector_ids ?? []);
+    setMaxDiscount(user?.max_discount_percent != null ? decimalToInput(user.max_discount_percent) : '');
+    setCanApprove(user?.can_approve_discounts ?? false);
+    setCommission(user?.commission_percent != null ? decimalToInput(user.commission_percent) : '');
     setError(null);
   }, [open, user, stores]);
 
@@ -66,6 +73,9 @@ function UserFormDialog({
         store_id: storeId ? Number(storeId) : null,
         password,
         sector_ids: sectorIds,
+        max_discount_percent: maxDiscount.trim() ? parseDecimal(maxDiscount) : null,
+        can_approve_discounts: canApprove,
+        commission_percent: commission.trim() ? parseDecimal(commission) : null,
         ...(user ? { active } : {}),
       };
       return user
@@ -89,6 +99,14 @@ function UserFormDialog({
       return setError('Usuário precisa ter 3-32 caracteres (letras, números, ponto, hífen ou underline).');
     }
     if ((!user || password) && password.length < 8) return setError('A senha precisa ter pelo menos 8 caracteres.');
+    const discount = maxDiscount.trim() ? parseDecimal(maxDiscount) : null;
+    if (maxDiscount.trim() && (discount === null || discount < 0 || discount > 100)) {
+      return setError('Desconto máximo de 0 a 100%. Em branco, vale o padrão da loja.');
+    }
+    const commissionValue = commission.trim() ? parseDecimal(commission) : null;
+    if (commission.trim() && (commissionValue === null || commissionValue < 0 || commissionValue > 100)) {
+      return setError('Comissão de 0 a 100%. Em branco, vale o padrão da loja.');
+    }
     setError(null);
     save.mutate();
   }
@@ -178,6 +196,41 @@ function UserFormDialog({
               <p className="text-[13px] text-muted-foreground">
                 Quem é do setor avança os pedidos das etapas dele. Administradores movem qualquer etapa.
               </p>
+            </fieldset>
+          )}
+          {role === 'seller' && (
+            <fieldset className="grid gap-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-sm font-medium">Desconto e comissão</legend>
+              <Field
+                label="Desconto máximo (%)"
+                htmlFor="usuario-desconto"
+                hint="Em branco, vale o padrão da loja (Configurações → Vendas). Acima dele, alguém libera com a senha."
+              >
+                <Input
+                  id="usuario-desconto"
+                  inputMode="decimal"
+                  value={maxDiscount}
+                  onChange={(e) => setMaxDiscount(e.target.value)}
+                  className="w-28 text-right tabular-nums"
+                />
+              </Field>
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox className="mt-0.5" checked={canApprove} onChange={(e) => setCanApprove(e.target.checked)} />
+                Pode liberar, com a própria senha, desconto acima do limite dos outros (até o limite dele)
+              </label>
+              <Field
+                label="Comissão (%)"
+                htmlFor="usuario-comissao"
+                hint="Sobre a venda confirmada, menos devoluções. Em branco, vale o padrão da loja."
+              >
+                <Input
+                  id="usuario-comissao"
+                  inputMode="decimal"
+                  value={commission}
+                  onChange={(e) => setCommission(e.target.value)}
+                  className="w-28 text-right tabular-nums"
+                />
+              </Field>
             </fieldset>
           )}
           <Field

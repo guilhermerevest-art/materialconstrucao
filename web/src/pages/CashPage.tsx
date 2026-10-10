@@ -19,6 +19,8 @@ import { useDebouncedValue, useDocumentTitle } from '@/lib/hooks';
 import type { CashSession, CashSummary, CashView, Paginated, Receivable, ReceivablePayment, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+const MOVEMENT_LABEL = { withdrawal: 'Sangria', deposit: 'Suprimento', refund: 'Devolução', payable: 'Conta paga' } as const;
+
 const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
 function OpenCash() {
@@ -330,10 +332,14 @@ export function CashPage() {
 
   const reverse = useMutation({
     mutationFn: ({ payment, reason }: { payment: ReceivablePayment; reason: string }) =>
-      api(`/receivable-payments/${payment.id}/reverse`, { method: 'POST', body: { reason } }),
+      api(payment.source === 'fiado' ? `/fiado/entries/${payment.id}/reverse` : `/receivable-payments/${payment.id}/reverse`, {
+        method: 'POST',
+        body: { reason },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cash'] });
       queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['fiado'] });
       queryClient.invalidateQueries({ queryKey: ['order-receivables'] });
       setReversing(null);
       toast.success('Recebimento estornado. A parcela voltou a ficar em aberto.');
@@ -398,6 +404,8 @@ export function CashPage() {
                 troco {formatMoney(view.session.opening_amount)}
                 {view.summary.withdrawals > 0 && ` · sangrias ${formatMoney(view.summary.withdrawals)}`}
                 {view.summary.deposits > 0 && ` · suprimentos ${formatMoney(view.summary.deposits)}`}
+                {view.summary.refunds > 0 && ` · devoluções ${formatMoney(view.summary.refunds)}`}
+                {view.summary.payables > 0 && ` · contas pagas ${formatMoney(view.summary.payables)}`}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-card px-5 py-4">
@@ -426,10 +434,11 @@ export function CashPage() {
               </CardHeader>
               <ul className="divide-y divide-border border-t border-border text-sm">
                 {view.payments.map((p) => (
-                  <li key={`p${p.id}`} className={cn('flex flex-wrap items-center gap-3 px-5 py-2.5', p.reversed_at && 'opacity-55')}>
+                  <li key={`${p.source ?? 'receivable'}${p.id}`} className={cn('flex flex-wrap items-center gap-3 px-5 py-2.5', p.reversed_at && 'opacity-55')}>
                     <span className="w-14 text-muted-foreground tabular-nums">{formatDateTime(p.received_at).slice(-5)}</span>
                     <span className="min-w-0 flex-1">
                       {p.client_name}
+                      {p.source === 'fiado' && <span className="ml-2 text-muted-foreground">fiado</span>}
                       {p.order_id && (
                         <Link to={`/pedidos/${p.order_id}`} className="ml-2 text-muted-foreground hover:underline">
                           pedido {formatOrderNumber(p.order_id)}
@@ -448,13 +457,13 @@ export function CashPage() {
                   </li>
                 ))}
                 {view.movements.map((m) => (
-                  <li key={`m${m.id}`} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+                  <li key={`${m.kind}${m.id}`} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
                     <span className="w-14 text-muted-foreground tabular-nums">{formatDateTime(m.created_at).slice(-5)}</span>
                     <span className="min-w-0 flex-1">
-                      {m.kind === 'withdrawal' ? 'Sangria' : 'Suprimento'}: {m.reason}
+                      {MOVEMENT_LABEL[m.kind]}: {m.reason}
                     </span>
-                    <span className={cn('w-24 text-right font-semibold tabular-nums', m.kind === 'withdrawal' ? 'text-destructive' : 'text-success')}>
-                      {m.kind === 'withdrawal' ? '-' : '+'}
+                    <span className={cn('w-24 text-right font-semibold tabular-nums', m.kind === 'deposit' ? 'text-success' : 'text-destructive')}>
+                      {m.kind === 'deposit' ? '+' : '-'}
                       {formatMoney(m.amount)}
                     </span>
                   </li>

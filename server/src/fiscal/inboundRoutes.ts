@@ -86,9 +86,11 @@ const NOT_FOUND = 'Nota recebida não encontrada.';
 const PAGE = 100;
 const MAX_PAGES = 20;
 
+// stock_entry_id: a nota já deu entrada no estoque (pela chave de acesso).
 const COLUMNS = `id, environment, access_key, nsu, summary, issuer_document, issuer_name, issuer_state_registration,
   nfe_type, amount, protocol, issued_at, authorized_at, cancelled, manifestation, manifestation_status,
-  manifestation_message, manifested_at, created_at, updated_at`;
+  manifestation_message, manifested_at, created_at, updated_at,
+  (select e.id from stock_entries e where e.access_key = fiscal_inbound_documents.access_key limit 1) as stock_entry_id`;
 
 type InboundRow = {
   id: number;
@@ -429,12 +431,25 @@ export function fiscalInboundRouter(ctx: AppContext) {
     if (kind === 'pdf' && doc.summary) {
       throw new HttpError(409, 'Por enquanto só chegou o resumo da nota. Dê ciência da operação e busque as notas de novo para baixar o DANFE.');
     }
-    const { acbr } = await settingsFor(me);
     let file: { data: Buffer };
-    try {
-      file = await acbr.download(`/distribuicao/nfe/documentos/${encodeURIComponent(doc.acbr_id)}/${kind}`);
-    } catch (err) {
-      throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+    const cached =
+      kind === 'xml' && !doc.summary
+        ? await withSession(pool, me, (db) => db.query<{ xml: string | null }>('select xml from fiscal_inbound_documents where id = $1', [id]))
+        : null;
+    if (cached?.rows[0]?.xml) {
+      file = { data: Buffer.from(cached.rows[0].xml, 'utf8') };
+    } else {
+      const { acbr } = await settingsFor(me);
+      try {
+        file = await acbr.download(`/distribuicao/nfe/documentos/${encodeURIComponent(doc.acbr_id)}/${kind}`);
+      } catch (err) {
+        throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+      }
+      // Nota completa (não o resumo): o XML não muda e fica guardado para o pacote do contador.
+      if (kind === 'xml' && !doc.summary) {
+        const xml = file.data.toString('utf8');
+        await withSession(pool, me, (db) => db.query('update fiscal_inbound_documents set xml = $2 where id = $1 and xml is null', [id, xml]));
+      }
     }
     res.setHeader('Content-Type', kind === 'pdf' ? 'application/pdf' : 'application/xml');
     res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="nfe-${doc.access_key}.${kind}"`);

@@ -10,6 +10,10 @@ export type User = {
   store_name: string | null;
   /** Financeiro (contas a receber e caixa) ligado na lojamestre. */
   finance_enabled?: boolean;
+  /** Desconto máximo de quem vende, em %. Nulo = sem limite. */
+  max_discount_percent?: number | null;
+  /** Fiado (caderneta) ligado na lojamestre. */
+  fiado_enabled?: boolean;
 };
 
 export type ManagedUser = User & {
@@ -17,6 +21,12 @@ export type ManagedUser = User & {
   created_at: string;
   /** Setores do fluxo do pedido: só quem é do setor tira o pedido das etapas dele. */
   sector_ids: number[];
+  /** Desconto máximo próprio (nulo = o padrão da loja). */
+  max_discount_percent: number | null;
+  /** Libera, com a própria senha, desconto acima do limite de quem vende. */
+  can_approve_discounts: boolean;
+  /** Comissão própria sobre a venda confirmada (nulo = o padrão da loja). */
+  commission_percent: number | null;
 };
 
 export type Store = {
@@ -60,6 +70,11 @@ export type Client = {
   name: string;
   whatsapp: string;
   created_at: string;
+  /** Com quem falar (vai no "Olá" das mensagens). Ausente nos avisos de WhatsApp duplicado. */
+  contact_name?: string | null;
+  /** Tabela de preço do cliente (o admin escolhe). */
+  price_list_id?: number | null;
+  price_list_name?: string | null;
   /** Ausente nos avisos de WhatsApp duplicado, que só trazem o básico. */
   details?: ClientDetails;
   /** Limite do crediário. Nulo: o cliente não compra no crediário. */
@@ -113,10 +128,19 @@ export type Product = {
   active: boolean;
   created_at: string;
   fiscal: ProductFiscal;
+  /** Unidade em que a loja compra (SC) e quantas unidades de venda vêm em cada uma (50 KG). */
+  purchase_unit?: string | null;
+  purchase_factor?: number | null;
   track_stock?: boolean;
   /** Saldo na loja pedida na busca (stock_store_id); nulo se o produto não controla estoque. */
   stock?: number | null;
+  /** Preço na tabela do cliente pedido na busca (client_id); nulo sem tabela. */
+  client_price?: number | null;
+  /** Faixas por quantidade (a partir de min_quantity, sai por price). */
+  tiers?: PriceTier[] | null;
 };
+
+export type PriceTier = { min_quantity: number; price: number };
 
 export type StockItem = {
   id: number;
@@ -137,7 +161,7 @@ export type StockList = Paginated<StockItem> & {
   summary: { below_min: number; negative: number };
 };
 
-export type StockMovementKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in';
+export type StockMovementKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'return';
 
 export type StockMovement = {
   id: number;
@@ -176,9 +200,10 @@ export type StockEntry = {
   created_at: string;
   user_name: string;
   items_count: number;
+  purchase_order_id: number | null;
 };
 
-export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'other';
+export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'fiado' | 'other';
 
 export type PaymentMethod = {
   id: number;
@@ -266,6 +291,14 @@ export type Order = {
   cancelled_by_name: string | null;
   cancel_reason: string | null;
   client_name: string;
+  /** Tabela de preço do cliente usada no pedido. */
+  price_list_name?: string | null;
+  /** Desconto acima do limite: quem liberou e até quanto. */
+  discount_approved_by_name?: string | null;
+  discount_approved_percent?: number | null;
+  payment_method_kind?: PaymentKind | null;
+  /** Parte do total paga com o crédito do cliente (vale-troca). */
+  credit_used?: number;
   client_whatsapp: string;
   store_name: string;
   store_address: string | null;
@@ -425,7 +458,23 @@ export type Dashboard = {
   by_store: { id: number; name: string; orders_today: number; orders_today_amount: number; quotes_today: number }[];
 };
 
-export type ReportType = 'dias' | 'lojas' | 'vendedores' | 'produtos' | 'clientes' | 'formas-de-pagamento';
+export type ReportType =
+  | 'dias'
+  | 'lojas'
+  | 'vendedores'
+  | 'produtos'
+  | 'clientes'
+  | 'formas-de-pagamento'
+  | 'comissao'
+  | 'conversao'
+  | 'devolucoes'
+  | 'curva-abc'
+  | 'estoque-parado'
+  | 'estoque-valorizado'
+  | 'margem'
+  | 'compras'
+  | 'inadimplencia'
+  | 'fluxo-de-caixa';
 
 export type ReportTotals = { count: number; total_amount: number; discount_amount: number; average_amount: number };
 
@@ -443,9 +492,14 @@ export type ReportRow = {
   total_amount: number;
   discount_amount?: number;
   average_amount?: number;
+  /** Colunas dos relatórios de formato próprio (comissão, estoque, financeiro...). */
+  [key: string]: unknown;
 };
 
-export type Report = { rows: ReportRow[]; totals: ReportTotals };
+export type ReportMetric = { label: string; value: number; format: 'money' | 'number' | 'percent' };
+
+/** Relatório de pedidos agrupados (totals) ou de formato próprio (metrics). */
+export type Report = { rows: ReportRow[]; totals?: ReportTotals; metrics?: ReportMetric[] };
 
 export type FiscalEnvironment = 'homologacao' | 'producao';
 
@@ -547,6 +601,8 @@ export type InboundDocument = {
   manifestation_message: string | null;
   manifested_at: string | null;
   created_at: string;
+  /** Entrada de estoque feita com esta nota (pela chave de acesso). */
+  stock_entry_id: number | null;
 };
 
 export type InboundListMeta = {
@@ -612,6 +668,8 @@ export type Delivery = {
   completed_by_name: string | null;
   items: DeliveryItem[];
   order_notes?: string | null;
+  /** Nota fiscal autorizada do pedido (modelo 55 = NF-e, 65 = NFC-e). */
+  invoice: { id: number; model: number; number: number; series: number; access_key: string | null } | null;
 };
 
 export type OrderDeliveries = { tracking: boolean; items: FulfillmentLine[]; deliveries: Delivery[] };
@@ -663,6 +721,8 @@ export type Receivable = {
 };
 
 export type ReceivablePayment = {
+  /** No movimento do caixa: parcela do financeiro ou recebimento do fiado. */
+  source?: 'receivable' | 'fiado';
   id: number;
   receivable_id: number;
   method_name: string;
@@ -697,6 +757,10 @@ export type CashSummary = {
   received: number;
   withdrawals: number;
   deposits: number;
+  /** Devoluções em dinheiro. */
+  refunds: number;
+  /** Contas pagas com o dinheiro da gaveta. */
+  payables: number;
   expected_cash: number;
   difference: number | null;
 };
@@ -705,12 +769,22 @@ export type CashView = {
   session: CashSession;
   summary: CashSummary;
   payments: ReceivablePayment[];
-  movements: { id: number; kind: 'withdrawal' | 'deposit'; amount: number; reason: string; created_at: string; user_name: string }[];
+  movements: {
+    id: number;
+    kind: 'withdrawal' | 'deposit' | 'refund' | 'payable';
+    amount: number;
+    reason: string;
+    created_at: string;
+    user_name: string;
+    payable_id: number | null;
+  }[];
 };
 
 export type ClientCredit = {
   credit_limit: number | null;
   open_balance: number;
+  /** Saldo do fiado (o limite vale para crediário e fiado juntos). */
+  fiado_balance?: number;
   overdue_amount: number;
   oldest_overdue: string | null;
   available: number | null;
@@ -780,4 +854,298 @@ export type FollowupSettings = {
   followup_days: number;
   followup_message: string | null;
   default_message: string;
+};
+
+export type PriceSource = 'catalog' | 'list' | 'tier';
+
+/** Preço que cada item vai ter ao salvar (POST /orders/price-preview). */
+export type PricePreview = {
+  price_list: { id: number; name: string } | null;
+  discount_limit: number | null;
+  items: {
+    product_id: number;
+    unit_price: number;
+    catalog_price: number;
+    source: PriceSource;
+    next_tier: PriceTier | null;
+    /** Item do orçamento que ficou com o preço da época. */
+    kept_previous: boolean;
+  }[];
+};
+
+export type PriceList = {
+  id: number;
+  name: string;
+  adjust_percent: number;
+  active: boolean;
+  created_at: string;
+  clients_count?: number;
+  items_count?: number;
+};
+
+export type PriceListItem = { product_id: number; code: string | null; name: string; unit: string; catalog_price: number; price: number };
+
+export type ProductPricing = {
+  id: number;
+  price: number;
+  cost_price: number | null;
+  markup_percent: number | null;
+  default_markup_percent: number | null;
+  tiers: PriceTier[];
+  history: { old_price: number; new_price: number; reason: string | null; created_at: string; user_name: string | null }[];
+};
+
+export type PriceAdjustResult = {
+  items: { id: number; code: string | null; name: string; unit: string; cost_price: number | null; old_price: number; new_price: number }[];
+  count: number;
+  skipped: number;
+  applied: boolean;
+};
+
+export type SalesSettings = {
+  max_discount_percent: number | null;
+  default_markup_percent: number | null;
+  /** Comissão padrão sobre a venda confirmada (nulo = sem comissão). */
+  default_commission_percent?: number | null;
+};
+
+export type FiadoSettings = {
+  enabled: boolean;
+  due_day: number;
+  block_days: number;
+  late_fee_percent: number;
+  interest_percent: number;
+  message: string | null;
+  default_message: string;
+};
+
+/** Cliente na lista do fiado. */
+export type FiadoAccountRow = {
+  client_id: number;
+  client_name: string;
+  client_whatsapp: string;
+  credit_limit: number | null;
+  balance: number;
+  overdue: number;
+  oldest_overdue: string | null;
+  next_due: string | null;
+  days_late: number;
+  last_payment_at: string | null;
+};
+
+export type FiadoEntryKind = 'purchase' | 'charge' | 'payment' | 'refund' | 'adjustment';
+
+export type FiadoEntry = {
+  id: number;
+  kind: FiadoEntryKind;
+  /** Com sinal: débito positivo, crédito negativo. */
+  amount: number;
+  due_date: string | null;
+  description: string | null;
+  order_id: number | null;
+  payment_method_name: string | null;
+  cash_session_id: number | null;
+  created_at: string;
+  user_name: string;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  /** Saldo depois do lançamento; nulo nos cancelados. */
+  balance_after: number | null;
+};
+
+export type FiadoAccount = {
+  client: { id: number; name: string; whatsapp: string; credit_limit: number | null; fiado_due_day: number | null };
+  account: {
+    balance: number;
+    overdue: number;
+    oldest_overdue: string | null;
+    days_late: number;
+    next_due: string | null;
+    next_due_amount: number;
+    charges: number;
+  };
+  due_day: number;
+  store_credit_open: number;
+  available: number | null;
+  blocked: boolean;
+  entries: FiadoEntry[];
+  message: string;
+};
+
+export type RefundMethod = 'cash' | 'pix' | 'card' | 'credit' | 'fiado' | 'receivables' | 'none';
+
+export type ReturnableItem = {
+  order_item_id: number;
+  product_id: number;
+  product_code: string | null;
+  product_name: string;
+  unit: string;
+  sold: number;
+  /** Levado pelo cliente (entregue/retirado); sem controle de entrega, o vendido. */
+  taken: number;
+  returned: number;
+  returnable: number;
+  /** Preço unitário com o desconto do pedido rateado. */
+  net_price: number;
+};
+
+export type OrderReturn = {
+  id: number;
+  reason: string;
+  refund_method: RefundMethod;
+  amount: number;
+  created_at: string;
+  user_name: string;
+  items: { product_name: string; unit: string; quantity: number; amount: number; restock: boolean }[];
+};
+
+export type OrderReturnsView = {
+  status: OrderStatus;
+  items: ReturnableItem[];
+  returns: OrderReturn[];
+  client_credit: number;
+  options: { finance: boolean; cash_open: boolean; fiado: boolean; payment_kind: PaymentKind | null; open_receivables: number };
+};
+
+export type Supplier = {
+  id: number;
+  name: string;
+  /** CNPJ ou CPF, só dígitos. */
+  document: string | null;
+  contact_name: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at: string;
+  open_orders?: number;
+  open_payables?: number;
+  last_entry_at?: string | null;
+};
+
+export type PurchaseStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled';
+
+export type PurchaseOrder = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  supplier_id: number;
+  supplier_name: string;
+  supplier_document: string | null;
+  status: PurchaseStatus;
+  expected_date: string | null;
+  notes: string | null;
+  total_amount: number;
+  created_at: string;
+  sent_at: string | null;
+  received_at: string | null;
+  closed_short: boolean;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  user_name: string;
+  items_count?: number;
+};
+
+export type PurchaseOrderItem = {
+  id: number;
+  product_id: number;
+  code: string | null;
+  product_name: string;
+  unit: string;
+  quantity: number;
+  unit_cost: number | null;
+  received_quantity: number;
+  /** Pedido em unidade de compra (quantidade e custo acima continuam na unidade de venda). */
+  purchase_unit: string | null;
+  purchase_factor: number | null;
+};
+
+export type PurchaseOrderDetail = PurchaseOrder & {
+  supplier: Supplier;
+  items: PurchaseOrderItem[];
+  entries: { id: number; invoice_number: string | null; invoice_series: string | null; total_amount: number; created_at: string; user_name: string }[];
+  payables: PayableInstallment[];
+  whatsapp_message: string;
+};
+
+export type PurchaseSuggestion = {
+  product_id: number;
+  code: string | null;
+  name: string;
+  unit: string;
+  quantity: number;
+  min_quantity: number;
+  on_order: number;
+  suggested: number;
+  purchase_unit: string | null;
+  purchase_factor: number | null;
+  suggested_purchase: number | null;
+  unit_cost: number | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
+};
+
+export type PayableInstallment = {
+  id: number;
+  installment: number;
+  installments: number;
+  due_date: string;
+  amount: number;
+  paid_amount: number;
+  status: 'open' | 'paid' | 'cancelled';
+};
+
+export type Payable = PayableInstallment & {
+  store_id: number;
+  store_name: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  description: string;
+  category: string | null;
+  document_number: string | null;
+  remaining: number;
+  entry_id: number | null;
+  purchase_order_id: number | null;
+  created_at: string;
+  paid_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  overdue: boolean;
+};
+
+export type PayableMethod = 'cash' | 'bank' | 'pix' | 'boleto' | 'card' | 'other';
+
+export type PayablePayment = {
+  id: number;
+  amount: number;
+  paid_on: string;
+  method: PayableMethod;
+  note: string | null;
+  created_at: string;
+  reversed_at: string | null;
+  reverse_reason: string | null;
+  user_name: string;
+  cash_session_id: number | null;
+  session_closed: boolean;
+};
+
+export type PayablesSummary = { overdue: number; today: number; next_7_days: number; next_30_days: number; open_total: number };
+
+export type SetupStep = {
+  key: string;
+  title: string;
+  description: string;
+  status: 'done' | 'todo' | 'warning';
+  optional: boolean;
+  detail: string | null;
+  link: string;
+  action: string;
+};
+
+export type SetupArea = {
+  key: string;
+  title: string;
+  description: string;
+  module: { enabled: boolean; link: string } | null;
+  steps: SetupStep[];
 };

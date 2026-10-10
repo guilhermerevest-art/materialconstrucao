@@ -35,6 +35,8 @@ export type RoutePdfData = {
     notes: string | null;
     order_notes: string | null;
     items: RouteItem[];
+    /** Nota fiscal autorizada do pedido, para o motorista levar junto. */
+    invoice?: { model: number; number: number; series: number } | null;
   }[];
 };
 
@@ -138,7 +140,10 @@ function draw(doc: Doc, data: RoutePdfData, title: string, timeZone: string) {
   y += 16;
 
   data.deliveries.forEach((delivery, index) => {
-    const header = `${index + 1}. Pedido ${formatOrderNumber(delivery.order_id)} - ${pdfSafe(delivery.client_name)}`;
+    const invoice = delivery.invoice
+      ? ` · ${delivery.invoice.model === 65 ? 'NFC-e' : 'NF-e'} ${delivery.invoice.number}/${delivery.invoice.series}`
+      : '';
+    const header = `${index + 1}. Pedido ${formatOrderNumber(delivery.order_id)}${invoice} - ${pdfSafe(delivery.client_name)}`;
     const lines = [
       delivery.address ? `Endereço: ${pdfSafe(delivery.address)}` : null,
       `WhatsApp: ${formatWhatsapp(delivery.client_whatsapp)}${delivery.period ? ` · Período: ${PERIOD[delivery.period]}` : ''}`,

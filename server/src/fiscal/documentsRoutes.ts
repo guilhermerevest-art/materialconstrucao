@@ -560,12 +560,25 @@ export function fiscalDocumentsRouter(ctx: AppContext) {
     if (!doc.acbr_id || (doc.status !== 'autorizado' && doc.status !== 'cancelado')) {
       throw new HttpError(409, kind === 'pdf' ? 'O DANFE fica disponível depois da autorização.' : 'O XML fica disponível depois da autorização.');
     }
-    const { acbr } = await settingsFor(user);
     let file: { data: Buffer; contentType: string };
-    try {
-      file = await acbr.download(`/${modelPath(doc.model)}/${encodeURIComponent(doc.acbr_id)}/${kind}`);
-    } catch (err) {
-      throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+    const cached =
+      kind === 'xml'
+        ? await withSession(pool, user, (db) => db.query<{ xml: string | null }>('select xml from fiscal_documents where id = $1', [id]))
+        : null;
+    if (cached?.rows[0]?.xml) {
+      file = { data: Buffer.from(cached.rows[0].xml, 'utf8'), contentType: 'application/xml' };
+    } else {
+      const { acbr } = await settingsFor(user);
+      try {
+        file = await acbr.download(`/${modelPath(doc.model)}/${encodeURIComponent(doc.acbr_id)}/${kind}`);
+      } catch (err) {
+        throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+      }
+      // O XML autorizado não muda: fica guardado para o pacote do contador.
+      if (kind === 'xml') {
+        const xml = file.data.toString('utf8');
+        await withSession(pool, user, (db) => db.query('update fiscal_documents set xml = $2 where id = $1 and xml is null', [id, xml]));
+      }
     }
     const name = `${modelPath(doc.model)}-${doc.series}-${doc.number}.${kind}`;
     const disposition = req.query.download === '1' ? 'attachment' : 'inline';

@@ -25,7 +25,7 @@ export function ClientCreditDialog({
   const credit = useQuery({
     queryKey: ['client-credit', client.id],
     queryFn: () => api<{ credit: ClientCredit }>(`/clients/${client.id}/credit`).then((r) => r.credit),
-    enabled: open && Boolean(user.finance_enabled),
+    enabled: open && Boolean(user.finance_enabled || user.fiado_enabled),
   });
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -62,21 +62,35 @@ export function ClientCreditDialog({
         <DialogHeader>
           <DialogTitle>Crédito de {client.name}</DialogTitle>
           <DialogDescription>
-            Quanto o cliente pode ficar devendo no crediário (parcelas em aberto, somando todas as lojas). Em branco, ele não
-            compra no crediário.
+            Quanto o cliente pode ficar devendo no crediário e no fiado, somando todas as lojas. Em branco, ele não compra a
+            prazo.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           {error && <Alert variant="danger" title={error} />}
           {credit.data && (
             <dl className="grid grid-cols-2 gap-1 rounded-md border border-border p-3 text-sm">
-              <dt className="text-muted-foreground">Em aberto</dt>
-              <dd className="text-right font-semibold tabular-nums">{formatMoney(credit.data.open_balance)}</dd>
-              <dt className="text-muted-foreground">Vencido</dt>
-              <dd className={`text-right font-semibold tabular-nums ${credit.data.overdue_amount > 0 ? 'text-destructive' : ''}`}>
-                {formatMoney(credit.data.overdue_amount)}
-                {credit.data.oldest_overdue && <span className="block text-xs font-normal">desde {formatDay(credit.data.oldest_overdue)}</span>}
-              </dd>
+              {user.finance_enabled && (
+                <>
+                  <dt className="text-muted-foreground">Crediário em aberto</dt>
+                  <dd className="text-right font-semibold tabular-nums">{formatMoney(credit.data.open_balance)}</dd>
+                </>
+              )}
+              {user.fiado_enabled && (
+                <>
+                  <dt className="text-muted-foreground">Fiado</dt>
+                  <dd className="text-right font-semibold tabular-nums">{formatMoney(credit.data.fiado_balance ?? 0)}</dd>
+                </>
+              )}
+              {user.finance_enabled && (
+                <>
+                  <dt className="text-muted-foreground">Crediário vencido</dt>
+                  <dd className={`text-right font-semibold tabular-nums ${credit.data.overdue_amount > 0 ? 'text-destructive' : ''}`}>
+                    {formatMoney(credit.data.overdue_amount)}
+                    {credit.data.oldest_overdue && <span className="block text-xs font-normal">desde {formatDay(credit.data.oldest_overdue)}</span>}
+                  </dd>
+                </>
+              )}
               {credit.data.available !== null && (
                 <>
                   <dt className="text-muted-foreground">Disponível</dt>

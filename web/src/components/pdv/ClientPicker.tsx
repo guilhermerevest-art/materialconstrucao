@@ -37,6 +37,12 @@ export function ClientPicker({
 
   const showSearch = searching || !value;
 
+  // Cliente que chega de fora depois de abrir (ex.: pedido da troca, ?cliente=): mostra o cartão.
+  useEffect(() => {
+    if (value && !query) setSearching(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value?.id]);
+
   // O campo de busca só existe depois de sair do cartão do cliente escolhido.
   const focusAfterRender = useRef(false);
   useLayoutEffect(() => {

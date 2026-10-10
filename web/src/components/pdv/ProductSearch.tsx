@@ -26,12 +26,15 @@ export function ProductSearch({
   onAdd,
   invalid,
   storeId,
+  clientId,
 }: {
   ref?: Ref<ProductSearchHandle>;
   onAdd: (product: Product, quantity: number) => void;
   invalid?: boolean;
   /** Loja do pedido: a busca mostra o saldo de estoque dela. */
   storeId?: number | null;
+  /** Cliente do pedido: a busca mostra o preço da tabela dele. */
+  clientId?: number | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
@@ -68,8 +71,9 @@ export function ProductSearch({
   useImperativeHandle(ref, () => ({ focus: showSearch, pendingProduct: () => pending }));
 
   const { data, isFetching } = useQuery({
-    queryKey: ['products', 'search', term, storeId],
-    queryFn: () => api<Paginated<Product>>(`/products${toQuery({ q: term, page_size: 8, stock_store_id: storeId })}`),
+    queryKey: ['products', 'search', term, storeId, clientId],
+    queryFn: () =>
+      api<Paginated<Product>>(`/products${toQuery({ q: term, page_size: 8, stock_store_id: storeId, client_id: clientId })}`),
     enabled: term.length > 0,
     placeholderData: keepPreviousData,
   });
@@ -142,7 +146,12 @@ export function ProductSearch({
           <p className="truncate font-semibold">{pending.name}</p>
           <p className="text-[13px] text-muted-foreground tabular-nums">
             {pending.code && <span className="mr-2">{pending.code}</span>}
-            {formatMoney(pending.price)} / {pending.unit}
+            {formatMoney(pending.client_price ?? pending.price)} / {pending.unit}
+            {pending.tiers?.length ? (
+              <span className="ml-2">
+                · a partir de {formatQuantity(pending.tiers[0]!.min_quantity)}: {formatMoney(pending.tiers[0]!.price)}
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -251,7 +260,12 @@ export function ProductSearch({
               >
                 {product.stock != null ? `Est. ${formatQuantity(product.stock)}` : ''}
               </span>
-              <span className="text-right font-semibold tabular-nums">{formatMoney(product.price)}</span>
+              <span className="text-right font-semibold tabular-nums" title={product.client_price != null ? 'Preço da tabela do cliente' : undefined}>
+                {formatMoney(product.client_price ?? product.price)}
+                {product.client_price != null && product.client_price !== product.price && (
+                  <span className="block text-[11px] font-normal text-muted-foreground line-through">{formatMoney(product.price)}</span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

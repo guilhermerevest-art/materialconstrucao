@@ -16,7 +16,8 @@ import {
 import { describeEvolutionError, keySourceOf, loadEvolutionSettings, sendPdfDocument, sendTextMessage } from '../lib/evolution.js';
 import { todayIn } from '../lib/format.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
-import { loadOrderDetail } from '../orders/queries.js';
+import { greetingName } from '../lib/greeting.js';
+import { loadOrderDetail, orderGreeting } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
 import { clientNumber } from './orders.js';
 
@@ -173,7 +174,7 @@ export function followupsRouter(ctx: AppContext) {
       const { rows: orders } = await db.query(
         `select o.id, o.status, o.total_amount, o.followup_count, o.followup_on,
                 ${LAST_CONTACT_SQL} as last_contact_at, ${dueOnSql('$2', '$3')}::text as due_on,
-                c.name as client_name, s.name as store_name
+                c.name as client_name, c.contact_name, c.person_type, s.name as store_name
            from orders o
            join clients c on c.id = o.client_id
            join stores s on s.id = o.store_id
@@ -192,7 +193,7 @@ export function followupsRouter(ctx: AppContext) {
         [id],
       );
       const message = renderFollowupMessage(settings.message ?? DEFAULT_FOLLOWUP_MESSAGE, {
-        clientName: order.client_name,
+        clientGreeting: greetingName({ name: order.client_name, contact_name: order.contact_name, person_type: order.person_type }),
         sellerName: user.name,
         storeName: order.store_name,
         orderId: order.id,
@@ -257,7 +258,7 @@ export function followupsRouter(ctx: AppContext) {
       message =
         body.message ??
         renderFollowupMessage(settings.message ?? DEFAULT_FOLLOWUP_MESSAGE, {
-          clientName: order.client_name,
+          clientGreeting: orderGreeting(order),
           sellerName: user.name,
           storeName: order.store_name,
           orderId: order.id,

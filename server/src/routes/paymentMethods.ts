@@ -12,7 +12,7 @@ const paymentMethodSchema = z.object({
   active: z.boolean().default(true),
   // Para o financeiro: o que é dinheiro na gaveta, o que é crediário, e em quantas parcelas.
   // Ausentes: na criação valem o padrão (à vista); na edição, ficam como estão.
-  kind: z.enum(['cash', 'pix', 'card', 'boleto', 'store_credit', 'other'], 'Tipo inválido.').optional(),
+  kind: z.enum(['cash', 'pix', 'card', 'boleto', 'store_credit', 'fiado', 'other'], 'Tipo inválido.').optional(),
   installments: z.number('Informe as parcelas.').int().min(1, 'No mínimo 1 parcela.').max(48, 'No máximo 48 parcelas.').optional(),
   first_due_days: z.number().int().min(0).max(365, 'O 1º vencimento vai até 365 dias.').optional(),
   interval_days: z.number().int().min(1).max(365).optional(),

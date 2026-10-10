@@ -13,3 +13,4 @@ coverage/
 .vercel/
 .remember/tmp/
 .remember/logs/
+*.tsbuildinfo
