@@ -20,6 +20,7 @@ import { FollowupCard } from '@/components/FollowupCard';
 import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
 import { OrderPaymentsCard } from '@/components/OrderPaymentsCard';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
+import { OrderFiscalCard } from '@/components/fiscal/OrderFiscalCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -188,7 +189,8 @@ export function OrderDetailPage() {
               Reabrir orçamento
             </Button>
           )}
-          {user.role === 'admin' && (
+          {/* Pedido confirmado não se exclui: cancela (o servidor também recusa). */}
+          {user.role === 'admin' && order.status !== 'order' && (
             <Button variant="destructive-ghost" onClick={() => setConfirm('delete')}>
               <Trash2 />
               Excluir
@@ -355,6 +357,7 @@ export function OrderDetailPage() {
             </CardContent>
           </Card>
 
+          <OrderFiscalCard order={order} />
           {isQuote && <FollowupCard order={order} />}
         </aside>
       </div>

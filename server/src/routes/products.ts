@@ -5,6 +5,7 @@ import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
+import { productFiscalSchema, type ProductFiscalInput } from '../fiscal/validation.js';
 
 const productSchema = z.object({
   code: optionalText(40),
@@ -17,6 +18,8 @@ const productSchema = z.object({
     .transform((u) => u.toUpperCase()),
   price: z.number('Informe o preço.').min(0, 'O preço não pode ser negativo.').max(9_999_999_999),
   active: z.boolean().default(true),
+  // Aba "Fiscal". Ausente, mantém o que está salvo; presente, substitui tudo.
+  fiscal: productFiscalSchema.optional(),
 });
 
 const listSchema = z.object({
@@ -27,8 +30,53 @@ const listSchema = z.object({
   ...pagination,
 });
 
-const PRODUCT_COLUMNS = 'id, code, name, unit, price, active, created_at';
+const FISCAL_COLUMNS = [
+  'gtin',
+  'ncm',
+  'cest',
+  'cfop',
+  'tax_origin',
+  'icms_cst',
+  'icms_rate',
+  'icms_base_reduction',
+  'pis_cst',
+  'pis_rate',
+  'cofins_cst',
+  'cofins_rate',
+  'ibscbs_cst',
+  'ibscbs_class',
+  'tax_benefit_code',
+  'fiscal_notes',
+] as const satisfies readonly (keyof ProductFiscalInput)[];
+
+const PRODUCT_COLUMNS = `id, code, name, unit, price, active, created_at, ${FISCAL_COLUMNS.join(', ')}`;
 const NOT_FOUND = 'Produto não encontrado.';
+
+type ProductRow = Record<string, unknown>;
+
+/** Os dados fiscais vão agrupados em `fiscal`, como a tela edita (aba própria). */
+function toProduct(row: ProductRow) {
+  const product: ProductRow = {};
+  const fiscal: ProductRow = {};
+  for (const [key, value] of Object.entries(row)) {
+    if ((FISCAL_COLUMNS as readonly string[]).includes(key)) fiscal[key] = value;
+    else product[key] = value;
+  }
+  return { ...product, fiscal };
+}
+
+/** Colunas e valores a gravar: os básicos sempre, os fiscais só quando vieram. */
+function writableColumns(body: z.infer<typeof productSchema>) {
+  const columns: string[] = ['code', 'name', 'unit', 'price', 'active'];
+  const values: unknown[] = [body.code, body.name, body.unit, body.price, body.active];
+  if (body.fiscal) {
+    for (const column of FISCAL_COLUMNS) {
+      columns.push(column);
+      values.push(body.fiscal[column]);
+    }
+  }
+  return { columns, values };
+}
 
 /** Catálogo único da rede. Todos consultam; só o admin altera. */
 export function productsRouter(ctx: AppContext) {
@@ -57,7 +105,7 @@ export function productsRouter(ctx: AppContext) {
       [q ?? null, q ? likePattern(q) : null, status, page_size, (page - 1) * page_size, query.stock_store_id ?? null],
     );
     res.json({
-      items: rows.map(({ total_count: _, ...row }) => row),
+      items: rows.map(({ total_count: _, ...row }) => toProduct(row)),
       total: rows[0]?.total_count ?? 0,
       page,
       page_size,
@@ -67,32 +115,34 @@ export function productsRouter(ctx: AppContext) {
   router.post('/', requireAdmin, async (req, res) => {
     const me = currentUser(req);
     const body = productSchema.parse(req.body);
+    const { columns, values } = writableColumns(body);
     const result = await withSession(ctx.pool, me, async (db) => {
       const { rows } = await db.query(
-        `insert into products (tenant_id, code, name, unit, price, active)
-         values ($1, $2, $3, $4, $5, $6) returning ${PRODUCT_COLUMNS}`,
-        [me.tenant_id, body.code, body.name, body.unit, body.price, body.active],
+        `insert into products (tenant_id, ${columns.join(', ')})
+         values ($1, ${columns.map((_, i) => `$${i + 2}`).join(', ')}) returning ${PRODUCT_COLUMNS}`,
+        [me.tenant_id, ...values],
       );
       return rows[0];
     });
-    res.status(201).json({ product: result });
+    res.status(201).json({ product: toProduct(result) });
   });
 
   router.put('/:id', requireAdmin, async (req, res) => {
     const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
     const body = productSchema.parse(req.body);
+    const { columns, values } = writableColumns(body);
     const result = await withSession(ctx.pool, me, async (db) => {
       const { rows } = await db.query(
-        `update products set code = $2, name = $3, unit = $4, price = $5, active = $6
+        `update products set ${columns.map((c, i) => `${c} = $${i + 2}`).join(', ')}
           where id = $1
           returning ${PRODUCT_COLUMNS}`,
-        [id, body.code, body.name, body.unit, body.price, body.active],
+        [id, ...values],
       );
       if (!rows[0]) throw new HttpError(404, NOT_FOUND);
       return rows[0];
     });
-    res.json({ product: result });
+    res.json({ product: toProduct(result) });
   });
 
   router.delete('/:id', requireAdmin, async (req, res) => {

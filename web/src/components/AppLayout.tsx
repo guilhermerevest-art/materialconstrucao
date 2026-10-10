@@ -31,6 +31,7 @@ const NAV: (NavItem | NavGroup)[] = [
     label: 'Operação',
     items: [
       { to: '/monitor', label: 'Monitor' },
+      { to: '/fiscal', label: 'Notas fiscais' },
       { to: '/entregas', label: 'Entregas' },
       { to: '/estoque', label: 'Estoque' },
     ],
@@ -61,7 +62,7 @@ const isGroup = (entry: NavItem | NavGroup): entry is NavGroup => 'items' in ent
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    'flex h-14 items-center px-2.5 text-sm font-medium whitespace-nowrap transition-colors xl:px-3',
+    'flex h-14 items-center px-2 text-sm font-medium whitespace-nowrap transition-colors xl:px-3',
     isActive ? 'text-white shadow-[inset_0_-3px_0_var(--color-primary)]' : 'text-white/70 hover:text-white',
   );
 

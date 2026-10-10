@@ -8,6 +8,8 @@ import { ConferencePage } from './pages/ConferencePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
 import { DeliveryProofPage } from './pages/DeliveryProofPage';
+import { FiscalDocumentsPage } from './pages/fiscal/FiscalDocumentsPage';
+import { FiscalInboundPage } from './pages/fiscal/FiscalInboundPage';
 import { LoginPage } from './pages/LoginPage';
 import { MonitorPage } from './pages/MonitorPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -104,9 +106,11 @@ export const router = createBrowserRouter([
       { path: 'entregas/:id', element: <DeliveryProofPage /> },
       { path: 'caixa', element: <CashPage /> },
       { path: 'contas-a-receber', element: <ReceivablesPage /> },
+      { path: 'fiscal', element: <FiscalDocumentsPage /> },
       {
         element: <RequireAdmin />,
         children: [
+          { path: 'fiscal/recebidas', element: <FiscalInboundPage /> },
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },

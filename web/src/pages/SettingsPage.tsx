@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, PlugZap, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Landmark, MessageCircleReply, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
+import { FiscalSettingsForm } from '@/components/fiscal/FiscalSettingsForm';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
 import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
 import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
@@ -10,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/input';
 import { Alert, Skeleton } from '@/components/ui/misc';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
@@ -23,6 +26,51 @@ const STATE_MESSAGES: Record<string, { ok: boolean; text: string }> = {
 
 export function SettingsPage() {
   useDocumentTitle('Configurações');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // A aba vai na URL: as mensagens de "configure em Configurações → Fiscal" levam direto para ela.
+  const requested = searchParams.get('aba');
+  const tab = requested === 'fiscal' || requested === 'financeiro' || requested === 'retomada' ? requested : 'whatsapp';
+
+  return (
+    <div className="max-w-4xl">
+      <PageHeader title="Configurações" />
+      <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'whatsapp' ? {} : { aba: value }, { replace: true })}>
+        <TabsList className="mb-2">
+          <TabsTrigger value="whatsapp">
+            <WhatsAppIcon className="size-4" />
+            WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="retomada">
+            <MessageCircleReply />
+            Retomada
+          </TabsTrigger>
+          <TabsTrigger value="financeiro">
+            <Landmark />
+            Financeiro
+          </TabsTrigger>
+          <TabsTrigger value="fiscal">
+            <Receipt />
+            Fiscal (dados da empresa)
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="whatsapp">
+          <WhatsAppSettings />
+        </TabsContent>
+        <TabsContent value="retomada" className="max-w-3xl">
+          <FollowupSettingsCard />
+        </TabsContent>
+        <TabsContent value="financeiro" className="max-w-3xl">
+          <FinanceSettingsCard />
+        </TabsContent>
+        <TabsContent value="fiscal">
+          <FiscalSettingsForm />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function WhatsAppSettings() {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState('');
   const [instance, setInstance] = useState('');
@@ -146,8 +194,6 @@ export function SettingsPage() {
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Configurações" />
-
       <Card>
         <CardHeader className="items-start">
           <div className="flex items-start gap-3">
@@ -189,8 +235,6 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      <FollowupSettingsCard />
-      <FinanceSettingsCard />
     </div>
   );
 }

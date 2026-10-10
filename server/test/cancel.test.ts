@@ -111,19 +111,37 @@ describeDb('cancelamento de pedido e orçamento perdido', () => {
     expect(move.status).toBe(409);
   });
 
-  it('com o módulo fiscal, NF-e autorizada impede o cancelamento', async () => {
+  it('nota fiscal em aberto impede o cancelamento; pedido com nota não é excluído', async () => {
     const admin = await login(app, 'admin');
     const order = (await createOrder(admin)).body.order;
-    // Só o que o cancelamento consulta da tabela do módulo fiscal.
-    await adminPool.query(`create table fiscal_documents (id serial primary key, order_id bigint not null, status text not null)`);
-    await adminPool.query('grant select on fiscal_documents to oms_app');
-    await adminPool.query(`insert into fiscal_documents (order_id, status) values ($1, 'cancelado'), ($1, 'autorizado')`, [order.id]);
+    const invoice = async (number: number, status: string) =>
+      (
+        await adminPool.query<{ id: number }>(
+          `insert into fiscal_documents (tenant_id, store_id, order_id, user_id, model, environment, series, number, status, total_amount)
+           values ($1, $2, $3, $4, 55, 'homologacao', 1, $5, $6, $7) returning id`,
+          [f.tenantId, order.store_id, order.id, f.adminId, number, status, order.total_amount],
+        )
+      ).rows[0]!.id;
+    const cancel = () => admin.post(`/api/orders/${order.id}/cancel`).send({ reason: 'Cliente desistiu' });
 
-    const blocked = await admin.post(`/api/orders/${order.id}/cancel`).send({ reason: 'Cliente desistiu' });
+    await invoice(1, 'cancelado');
+    const authorized = await invoice(2, 'autorizado');
+    const blocked = await cancel();
     expect(blocked.status).toBe(409);
-    expect(blocked.body.error).toContain('NF-e');
+    expect(blocked.body.error).toContain('Cancele a nota');
 
-    await adminPool.query(`update fiscal_documents set status = 'cancelado'`);
-    expect((await admin.post(`/api/orders/${order.id}/cancel`).send({ reason: 'Cliente desistiu' })).status).toBe(200);
+    // Recusada ainda segura o número: precisa inutilizar.
+    await adminPool.query(`update fiscal_documents set status = 'rejeitado' where id = $1`, [authorized]);
+    const rejected = await cancel();
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error).toContain('Inutilize');
+
+    await adminPool.query(`update fiscal_documents set status = 'inutilizado' where id = $1`, [authorized]);
+    expect((await cancel()).status).toBe(200);
+
+    // A nota (mesmo cancelada) é documento fiscal: o pedido fica, como cancelado.
+    const removed = await admin.delete(`/api/orders/${order.id}`);
+    expect(removed.status).toBe(409);
+    expect(removed.body.error).toBe('Este pedido tem nota fiscal emitida e não pode ser excluído.');
   });
 });

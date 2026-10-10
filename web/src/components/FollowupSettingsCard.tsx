@@ -50,7 +50,7 @@ export function FollowupSettingsCard() {
   }
 
   return (
-    <Card className="mt-6">
+    <Card>
       <CardHeader className="items-start">
         <div className="flex items-start gap-3">
           <MessageCircleReply className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />

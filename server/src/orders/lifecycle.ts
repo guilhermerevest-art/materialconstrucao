@@ -29,20 +29,23 @@ type CancellableOrder = {
 };
 
 /**
- * Notas fiscais do pedido que impedem o cancelamento. A tabela é do módulo fiscal
- * (outra migração); sem ela, não há nota para conferir.
+ * Nota fiscal em aberto impede o cancelamento: autorizada ou em processamento (cancele
+ * a nota) e recusada ou com erro, que ainda segura o número (inutilize o número). São
+ * os mesmos status que o módulo fiscal trata como nota em andamento do pedido.
  */
 async function assertNoActiveInvoice(db: pg.PoolClient, orderId: number) {
-  const { rows } = await db.query<{ installed: boolean }>(
-    `select to_regclass('fiscal_documents') is not null as installed`,
-  );
-  if (!rows[0]?.installed) return;
-  const { rowCount } = await db.query(
-    `select 1 from fiscal_documents where order_id = $1 and status in ('pendente', 'autorizado')`,
+  const { rows } = await db.query<{ status: string }>(
+    `select status from fiscal_documents
+      where order_id = $1 and status in ('pendente', 'autorizado', 'rejeitado', 'erro')
+      limit 1`,
     [orderId],
   );
-  if (rowCount) {
-    throw new HttpError(409, 'Este pedido tem NF-e autorizada ou em processamento. Cancele a nota antes de cancelar o pedido.');
+  const status = rows[0]?.status;
+  if (status === 'pendente' || status === 'autorizado') {
+    throw new HttpError(409, 'Este pedido tem nota fiscal autorizada ou em processamento. Cancele a nota antes de cancelar o pedido.');
+  }
+  if (status) {
+    throw new HttpError(409, 'Este pedido tem nota fiscal recusada esperando correção. Inutilize o número da nota antes de cancelar o pedido.');
   }
 }
 

@@ -140,8 +140,9 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 - **Cancelar:** orçamento pode ser marcado como **perdido** por quem atende, com o motivo, e reaberto se foi
   engano. **Pedido confirmado só o admin cancela**, também com motivo, e não volta. O cancelado continua no
   sistema (aba Cancelados), sai do monitor, das vendas do painel e dos relatórios, não é editado nem enviado
-  por WhatsApp. Pedido com NF-e autorizada ou em processamento só é cancelado depois de cancelar a nota.
-  Excluir (só admin) continua apagando de vez.
+  por WhatsApp. Com nota fiscal autorizada ou em processamento, cancele a nota antes; com nota recusada
+  esperando correção, inutilize o número antes. **Excluir** (só admin) vale para orçamento e documento
+  cancelado; pedido confirmado se cancela, e pedido que teve nota fiscal não é excluído.
 - Produto usado em pedidos não pode ser excluído; desative-o para tirá-lo da busca.
 - **Forma de pagamento** (opcional) é escolhida no orçamento ou pedido e sai no PDF. O administrador
   cadastra as formas em Administração → Formas de pagamento; toda lojamestre começa com Dinheiro, PIX,
@@ -213,7 +214,7 @@ Botão **Separação** no pedido confirmado (e **Separar** em cada entrega agend
 
 ## Financeiro (opcional)
 
-Desligado por padrão: a venda funciona como sempre. O admin liga em **Administração → Configurações →
+Desligado por padrão: a venda funciona como sempre. O admin liga em **Administração → Configurações → aba
 Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
 
 - **Forma de pagamento com condição:** cada forma tem um tipo (dinheiro, PIX, cartão, boleto, crediário,
@@ -254,7 +255,7 @@ configurar nada.
   perdido com o motivo. Reabrir o orçamento perdido traz de volta.
 - O vendedor vê os orçamentos da própria loja (com "Só os meus" para os dele); o aviso da tela inicial conta
   só os dele. O admin vê a rede.
-- **Configurar (opcional):** em Administração → Configurações → Retomada de orçamentos, os dias (1 a 60) e a
+- **Configurar (opcional):** em Administração → Configurações → aba Retomada, os dias (1 a 60) e a
   mensagem, com `{cliente}`, `{vendedor}`, `{loja}`, `{pedido}` e `{total}`.
 
 ## Fluxo de pedidos e monitores
@@ -379,6 +380,85 @@ nem para o navegador. Quem tem servidor próprio ainda pode preencher os dados �
 A chave nunca volta inteira para o navegador. Se o envio falhar, o vendedor vê o motivo
 e um botão para baixar o PDF e mandar manualmente.
 
+## Módulo fiscal (ACBr API)
+
+Emissão de **NF-e** (modelo 55) e **NFC-e** (modelo 65) a partir dos pedidos e **monitor das notas
+recebidas** de fornecedores, tudo pela [ACBr API](https://dev.acbr.api.br/docs/api) (REST, OAuth2
+`client_credentials`). A ACBr API assina com o certificado, transmite para a SEFAZ, guarda o XML e
+gera o DANFE; aqui fica só o que a tela precisa para listar, numerar e chegar ao documento de lá.
+
+### Configuração
+
+1. **Conta da lojamestre na ACBr API.** Cada lojamestre tem a sua conta (com as próprias empresas,
+   certificados, notas e créditos): o admin dela informa o `client_id` e o `client_secret` em
+   Configurações → Fiscal e usa **Testar conta**. O `client_secret` nunca volta para o navegador. Não há
+   conta da plataforma: sem conta informada, a emissão e o monitor daquela lojamestre ficam bloqueados.
+2. **Administração → Configurações → aba Fiscal**: CNPJ (o botão de busca preenche pela Receita),
+   razão social, IE, regime tributário (CRT), endereço com código IBGE (o CEP preenche), série e
+   próximo número da NF-e e da NFC-e, CSC da NFC-e e o ambiente. **Salvar** grava e já envia o
+   cadastro para a ACBr API (`/empresas`, configurações de NF-e, NFC-e e distribuição).
+3. **Certificado A1** (.pfx/.p12) na mesma aba. Ele vai direto para a ACBr API; o arquivo e a senha
+   não ficam no banco, só o titular e a validade (a tela avisa 30 dias antes de vencer).
+4. Comece em **homologação**: as notas saem com "SEM VALOR FISCAL" e não contam na SEFAZ. Ao passar
+   para produção, acerte o próximo número para continuar a sequência que a empresa já usa.
+
+O token OAuth2 fica em cache por conta, e a chave do cache inclui o `client_secret` (em hash): uma
+lojamestre que digite o `client_id` de outra não aproveita o token dela. Trocar de conta exige o segredo
+da conta nova e pede para reenviar a empresa e o certificado, que ficaram na conta antiga.
+
+### Cadastros
+
+- **Produto → aba Fiscal**: NCM (obrigatório na nota), CEST, GTIN (vazio = `SEM GTIN`), CFOP
+  (vazio = 5102, ou 5405 com ST), origem, CSOSN (Simples) ou CST (regime normal) com alíquotas,
+  PIS/COFINS (no Simples, em branco sai CST 49), IBS/CBS (regime normal) e cBenef. A lista de produtos
+  marca "Sem NCM" para o admin achar o que falta.
+- **Cliente → aba Cadastro completo**: pessoa física/jurídica, CPF/CNPJ (com dígito verificador; o
+  CNPJ alfanumérico de 2026 é aceito), IE e indicador, consumidor final, e-mail e endereço com código
+  IBGE. A busca de clientes também acha pelo CPF/CNPJ.
+
+### Emissão
+
+No detalhe de um **pedido confirmado**, o quadro **Nota fiscal** emite a NFC-e (balcão) ou a NF-e.
+O servidor monta a nota com os dados do banco (itens, preços e desconto do pedido, rateado entre os
+itens ao centavo), nunca com o que vem do navegador.
+
+- Cadastro incompleto devolve a **lista do que falta** (empresa, cliente, cada produto) com atalho
+  para corrigir, e o número não é gasto.
+- O número é reservado na mesma transação da nota: duas emissões ao mesmo tempo não repetem número, e
+  um pedido só tem uma nota em aberto (índice único no banco).
+- **Rejeitada** ou com **erro**: corrija o cadastro e use **Reenviar**, com o mesmo número (a SEFAZ não
+  consome o número de nota rejeitada). Envio sem resposta é conferido pela referência antes de
+  reenviar, para não mandar em dobro. Se o pedido não vai mais ter nota, o admin **inutiliza o número**.
+- **Cancelar** é do admin, com justificativa (15 a 255 caracteres). Cancelada ou inutilizada, o pedido
+  aceita outra nota. Pedido com nota não pode ser excluído.
+- O vendedor emite e consulta as notas da própria loja (RLS, como os pedidos); o admin vê a rede em
+  **Operação → Notas fiscais → Notas emitidas**, com DANFE e XML.
+
+### Monitor de notas recebidas
+
+**Operação → Notas fiscais → Notas recebidas** (admin) lista as NF-e emitidas contra o CNPJ da empresa,
+trazidas pela distribuição DF-e da SEFAZ. A ACBr API consulta a SEFAZ sozinha a cada poucas horas (configurável); a
+tela lê o que já chegou ao abrir, e **Buscar na SEFAZ agora** pede uma consulta na hora (a SEFAZ limita
+a uma por hora quando não há nada novo). **Consultar por chave** traz uma nota específica.
+
+Primeiro chega o **resumo**. Dar **ciência da operação** libera a nota completa (DANFE e XML) na
+próxima busca; depois o admin confirma, desconhece ou registra "operação não realizada"
+(com justificativa). Também dá para ligar a ciência automática. Notas canceladas pelo emitente ficam
+marcadas.
+
+### Limitações desta versão
+
+- Venda interestadual para consumidor final não contribuinte (DIFAL) e interestadual no regime normal
+  (alíquota interestadual do ICMS) são recusadas com aviso; venda dentro da UF e interestadual para
+  contribuinte no Simples funcionam.
+- ICMS: CSOSN 101, 102, 103, 300, 400, 500 e 900; CST 00, 20, 40, 41, 50 e 60. Sem ICMS-ST próprio
+  (CST 10/70), IPI e FCP.
+- IBS/CBS: CST 000, 400 e 410, com as alíquotas do período de teste (2026) definidas em Configurações.
+- A forma de pagamento vira o código da SEFAZ pelo nome (Dinheiro, PIX, Cartão de crédito/débito,
+  Boleto, Crediário...); o que não for reconhecido sai como 99 (outros).
+- Os dados da empresa são da lojamestre inteira: lojas com CNPJ próprio (filiais) ainda não emitem
+  cada uma com o seu.
+
 ## Estrutura
 
 ```text
@@ -386,9 +466,12 @@ api/index.ts            entrada da Serverless Function (Vercel)
 server/migrations/      SQL versionado (schema, RLS)
 server/src/app.ts       app Express e rotas
 server/src/routes/      auth, lojas, usuários, clientes, produtos, pedidos, configurações, painel
+server/src/fiscal/      módulo fiscal: cliente da ACBr API, montagem da NF-e/NFC-e, rotas de emissão e monitor
 server/src/pdf/         layout A4 do pedido
 server/src/lib/         EvolutionAPI, telefone, formatação, limite de login
 server/test/            testes (Vitest + Supertest)
 web/src/pages/          telas
 web/src/components/pdv/ busca de cliente, busca de produto e carrinho do PDV
+web/src/pages/fiscal/   notas emitidas e monitor de notas recebidas
+web/src/components/fiscal/ dados da empresa, nota do pedido, endereço com busca de CEP
 ```

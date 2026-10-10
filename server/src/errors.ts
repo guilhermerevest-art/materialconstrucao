@@ -22,6 +22,9 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   tenant_domains_domain_key: 'Este domínio já está em outra lojamestre.',
   tenants_slug_key: 'Já existe uma lojamestre com esse slug.',
   payment_methods_tenant_name_key: 'Já existe uma forma de pagamento com esse nome.',
+  fiscal_documents_number_key:
+    'Este número de nota já foi usado. Ajuste o próximo número em Configurações → Fiscal e tente de novo.',
+  fiscal_documents_order_open_key: 'Este pedido já tem uma nota fiscal em andamento.',
   sectors_tenant_name_key: 'Já existe um setor com esse nome.',
   workflows_scope_key: 'Este fluxo acabou de ser criado por outra pessoa. Atualize a página.',
 };
@@ -34,12 +37,16 @@ const IN_USE_MESSAGES: Record<string, string> = {
   orders_store_id_fkey: 'Esta loja tem pedidos registrados e não pode ser excluída.',
   orders_payment_method_id_fkey:
     'Esta forma de pagamento aparece em pedidos e não pode ser excluída. Desative-a para tirá-la da lista.',
+  fiscal_documents_order_id_fkey: 'Este pedido tem nota fiscal emitida e não pode ser excluído.',
   workflow_stages_sector_id_fkey: 'Este setor é usado em etapas do fluxo. Tire-o das etapas antes de excluir.',
   orders_stage_id_fkey: 'Há pedidos nesta etapa. Avance ou devolva esses pedidos antes de removê-la.',
 };
 
 const CHECK_MESSAGES: Record<string, string> = {
   users_seller_needs_store: 'Vendedores precisam estar vinculados a uma loja.',
+  products_fiscal_format: 'Dados fiscais do produto fora do formato (NCM, CEST, CFOP ou alíquotas).',
+  clients_fiscal_format: 'Cadastro completo do cliente fora do formato (CPF/CNPJ, CEP, código IBGE ou UF).',
+  fiscal_settings_format: 'Dados fiscais da empresa fora do formato.',
 };
 
 function databaseErrorResponse(err: pg.DatabaseError): { status: number; message: string } | null {
