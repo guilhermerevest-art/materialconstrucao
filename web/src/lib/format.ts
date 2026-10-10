@@ -72,3 +72,27 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
+
+/** "2026-10-20" (dia, sem hora) para "20/10/2026". */
+export function formatDay(value: string) {
+  const [year, month, day] = value.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** Dia de hoje no navegador, como "2026-10-10". */
+export function todayIso(date = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Soma dias a "2026-10-10". */
+export function addDays(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return todayIso(new Date(y!, m! - 1, d! + days));
+}
+
+/** "sexta-feira, 10 de outubro". */
+export function formatWeekday(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y!, m! - 1, d!));
+}

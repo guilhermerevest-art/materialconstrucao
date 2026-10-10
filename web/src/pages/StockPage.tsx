@@ -580,6 +580,9 @@ export function StockPage() {
                   <TH className="pl-4">Código</TH>
                   <TH>Produto</TH>
                   <TH className="text-right">Saldo</TH>
+                  <TH className="text-right" title="Vendido e ainda não entregue: continua na prateleira">
+                    A entregar
+                  </TH>
                   <TH className="text-right">Mínimo</TH>
                   <TH className="text-right">Último custo</TH>
                   <TH className="pr-4">
@@ -604,6 +607,9 @@ export function StockPage() {
                       </TD>
                       <TD className="text-right">
                         {item.track_stock ? <QuantityText value={item.quantity} unit={item.unit} /> : <span className="text-muted-foreground">—</span>}
+                      </TD>
+                      <TD className="text-right text-muted-foreground tabular-nums">
+                        {item.to_deliver ? formatQuantity(item.to_deliver) : '—'}
                       </TD>
                       <TD className="text-right text-muted-foreground tabular-nums">
                         {item.min_quantity != null ? formatQuantity(item.min_quantity) : '—'}

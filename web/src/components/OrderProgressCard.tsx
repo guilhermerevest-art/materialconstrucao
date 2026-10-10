@@ -34,6 +34,8 @@ export function OrderProgressCard({ order, workflow }: { order: Order; workflow:
       queryClient.setQueryData(['order', order.id], next);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['monitor'] });
+      // Chegar na etapa final registra a entrega do que faltava.
+      queryClient.invalidateQueries({ queryKey: ['order-deliveries', order.id] });
       setBackOpen(false);
       setNote('');
       toast.success(`Pedido em "${next.workflow?.stage_name}".`);

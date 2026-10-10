@@ -38,6 +38,8 @@ export type OrderDetail = {
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;
   confirmed_at: Date | null;
+  /** Pedido com saldo a entregar (confirmado depois do controle de entregas). */
+  delivery_tracking: boolean;
   sent_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -91,7 +93,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
     `select o.id, o.user_id, o.store_id, o.client_id, o.status,
             o.subtotal_amount, o.discount_type, o.discount_value, o.discount_amount, o.total_amount,
             o.notes, o.delivery_address, o.client_site_id, cs.name as client_site_name,
-            o.payment_method_id, o.payment_method_name, o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
+            o.payment_method_id, o.payment_method_name, o.confirmed_at, o.delivery_tracking, o.sent_at, o.created_at, o.updated_at,
             o.cancelled_from, o.cancelled_at, cu.name as cancelled_by_name, o.cancel_reason,
             c.name as client_name, c.whatsapp as client_whatsapp,
             s.name as store_name, s.address as store_address, s.phone as store_phone,

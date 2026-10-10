@@ -154,8 +154,8 @@ export type MoveInput = {
   note: string | null;
 };
 
-/** Etapa em que o pedido entrou, com a mensagem de WhatsApp dela. */
-export type EnteredStage = StageRef & { whatsapp_message: string | null };
+/** Etapa em que o pedido entrou, com a mensagem de WhatsApp dela e se é a final do fluxo. */
+export type EnteredStage = StageRef & { whatsapp_message: string | null; is_final: boolean };
 
 /**
  * Avança o pedido para a próxima etapa ou devolve para a anterior. A linha do pedido
@@ -191,9 +191,12 @@ export async function moveOrderStage(
     throw new HttpError(409, input.direction === 'next' ? 'Este pedido já está concluído.' : 'Este pedido já está na primeira etapa.');
   }
 
-  const { rows } = await db.query<EnteredStage>('select id, name, whatsapp_message from workflow_stages where id = $1', [
-    targetId,
-  ]);
+  const { rows } = await db.query<EnteredStage>(
+    `select ws.id, ws.name, ws.whatsapp_message,
+            not exists (select 1 from workflow_stages nx where nx.workflow_id = ws.workflow_id and nx.position > ws.position) as is_final
+       from workflow_stages ws where ws.id = $1`,
+    [targetId],
+  );
   const target = rows[0]!;
   await db.query('update orders set stage_id = $2, stage_entered_at = now(), updated_at = now() where id = $1', [
     orderId,

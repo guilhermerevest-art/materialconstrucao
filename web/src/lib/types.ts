@@ -77,6 +77,8 @@ export type StockItem = {
   track_stock: boolean;
   quantity: number;
   min_quantity: number | null;
+  /** Vendido e ainda não entregue: continua na prateleira. */
+  to_deliver: number;
 };
 
 export type StockList = Paginated<StockItem> & {
@@ -196,6 +198,8 @@ export type Order = {
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;
   confirmed_at: string | null;
+  /** Pedido com saldo a entregar (confirmado depois do controle de entregas). */
+  delivery_tracking: boolean;
   sent_at: string | null;
   created_at: string;
   updated_at: string;
@@ -382,3 +386,78 @@ export type ReportRow = {
 };
 
 export type Report = { rows: ReportRow[]; totals: ReportTotals };
+
+export type DeliveryKind = 'pickup' | 'delivery';
+export type DeliveryStatus = 'scheduled' | 'in_route' | 'done' | 'cancelled';
+export type DeliveryPeriod = 'morning' | 'afternoon';
+
+export type FulfillmentLine = {
+  order_item_id: number;
+  product_id: number;
+  product_code: string | null;
+  product_name: string;
+  unit: string;
+  quantity: number;
+  delivered: number;
+  scheduled: number;
+  pending: number;
+};
+
+export type DeliveryItem = {
+  order_item_id: number;
+  product_id: number;
+  product_code: string | null;
+  product_name: string;
+  unit: string;
+  quantity: number;
+};
+
+export type Delivery = {
+  id: number;
+  order_id: number;
+  store_id: number;
+  store_name: string;
+  kind: DeliveryKind;
+  status: DeliveryStatus;
+  /** "2026-10-20" */
+  scheduled_date: string | null;
+  period: DeliveryPeriod | null;
+  address: string | null;
+  route_id: number | null;
+  route_position: number | null;
+  receiver_name: string | null;
+  receiver_document: string | null;
+  notes: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  has_signature: boolean;
+  has_photo: boolean;
+  client_name: string;
+  client_whatsapp: string;
+  created_by_name: string;
+  completed_by_name: string | null;
+  items: DeliveryItem[];
+  order_notes?: string | null;
+};
+
+export type OrderDeliveries = { tracking: boolean; items: FulfillmentLine[]; deliveries: Delivery[] };
+
+export type DeliveryRoute = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  route_date: string;
+  vehicle_id: number | null;
+  vehicle_name: string | null;
+  vehicle_plate: string | null;
+  driver_name: string | null;
+  status: 'open' | 'in_route' | 'done';
+  notes: string | null;
+  created_at: string;
+  departed_at: string | null;
+  finished_at: string | null;
+};
+
+export type Vehicle = { id: number; name: string; plate: string | null; active: boolean; created_at: string };

@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 import { HttpError } from '../errors.js';
+import { cancelOrderDeliveries } from '../deliveries/queries.js';
 import { applyOrderStock, returnOrderStock } from '../stock/queries.js';
 import { enterWorkflow } from '../workflow/queries.js';
 
@@ -11,6 +12,8 @@ import { enterWorkflow } from '../workflow/queries.js';
 export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user: SessionUser) {
   await enterWorkflow(db, orderId, user.id);
   await applyOrderStock(db, orderId, user);
+  // Daqui em diante o pedido tem saldo a entregar (retiradas e entregas parciais).
+  await db.query('update orders set delivery_tracking = true where id = $1', [orderId]);
 }
 
 type CancellableOrder = {
@@ -59,6 +62,7 @@ export async function cancelOrder(db: pg.PoolClient, orderId: number, user: Sess
     await assertNoActiveInvoice(db, orderId);
   }
 
+  if (order.status === 'order') await cancelOrderDeliveries(db, orderId, user, `Pedido cancelado: ${reason}`);
   if (order.stock_applied) await returnOrderStock(db, orderId, user, `Pedido cancelado: ${reason}`);
   await db.query(
     `update orders

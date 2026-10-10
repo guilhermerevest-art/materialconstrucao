@@ -172,6 +172,32 @@ do administrador.
 - **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
 - Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
 
+## Entregas e retiradas
+
+Menu **Operação → Entregas** e o quadro **Entregas e retiradas** no detalhe do pedido. O estoque já baixou na
+venda; aqui é a logística de quando e como a mercadoria sai.
+
+- **Saldo a entregar por item:** vendido, entregue, agendado e a entregar. Vale para pedidos confirmados
+  depois deste controle existir (os antigos não mostram o quadro). No estoque, a coluna **A entregar** mostra o
+  que foi vendido e continua na prateleira.
+- **Retirada (parcial ou total):** "Registrar retirada" no pedido, com as quantidades que o cliente leva agora.
+  O resto continua no saldo (o cliente compra 200 sacos e leva 50 por semana).
+- **Agendar:** entrega no endereço (do pedido ou da obra) ou retirada na loja, com dia, período (manhã/tarde) e
+  as quantidades. Nunca passa do que falta entregar. Dá para reagendar enquanto não está em rota.
+- **Romaneio:** na agenda do dia, marque as entregas e monte o romaneio (veículo, motorista). O PDF traz o
+  resumo da carga para conferir o caminhão e cada entrega com espaço para assinatura. "Saiu para entrega" põe
+  as entregas em rota; "Veículo voltou" fecha o romaneio, e o que ficou sem comprovante volta para reagendar.
+- **Comprovante no celular:** o motorista abre a entrega, toca em **Abrir no mapa** ou no WhatsApp do cliente,
+  registra quem recebeu, a assinatura no dedo e uma foto (reduzida no celular antes de enviar).
+  **Não foi possível entregar** registra o motivo e devolve a quantidade para o saldo.
+- **Estornar** uma entrega já confirmada (registrada por engano, cliente devolveu) é só do admin.
+- **Etapa final do fluxo:** quando o pedido chega na última etapa ("Entregue", "Retirado"), o que ainda não tinha
+  sido agendado nem entregue é registrado como entregue, para quem só usa o monitor não precisar lançar à mão.
+- **Cancelar pedido** desmarca as entregas agendadas; com entrega já feita, o cancelamento é bloqueado até
+  estornar as entregas (a mercadoria precisa voltar).
+- Atrasadas (agendadas para antes de hoje e não feitas) aparecem em destaque na agenda.
+- O vendedor vê as entregas e romaneios da própria loja; o admin, de todas. Veículos são cadastrados pelo admin.
+
 ## Fluxo de pedidos e monitores
 
 Depois de confirmado, o pedido pode percorrer etapas (ex.: Aguardando faturamento → Em separação →

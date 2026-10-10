@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { CancelOrderDialog } from '@/components/CancelOrderDialog';
+import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -226,6 +227,8 @@ export function OrderDetailPage() {
               </div>
             </div>
           </Card>
+
+          {order.status === 'order' && order.delivery_tracking && <OrderDeliveriesCard order={order} />}
 
           {order.delivery_address && (
             <Card>

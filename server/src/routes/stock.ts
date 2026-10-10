@@ -138,12 +138,28 @@ export function stockRouter(ctx: AppContext) {
     const query = listSchema.parse(req.query);
     const result = await withSession(ctx.pool, user, async (db) => {
       const storeId = await resolveStore(db, user, query.store_id);
+      // A entregar: vendido (o estoque já baixou) e ainda não retirado nem entregue.
+      // Continua na prateleira, então o físico é o saldo mais isso.
       const { rows } = await db.query(
-        `select p.id, p.code, p.name, p.unit, p.price, p.cost_price, p.track_stock,
+        `with to_deliver as (
+           select i.product_id, sum(i.quantity - coalesce(dv.delivered, 0)) as quantity
+             from orders o
+             join order_items i on i.order_id = o.id
+             left join lateral (
+               select sum(di.quantity) as delivered
+                 from delivery_items di join deliveries d on d.id = di.delivery_id
+                where di.order_item_id = i.id and d.status = 'done'
+             ) dv on true
+            where o.store_id = $1 and o.status = 'order' and o.delivery_tracking
+            group by i.product_id
+         )
+         select p.id, p.code, p.name, p.unit, p.price, p.cost_price, p.track_stock,
                 coalesce(b.quantity, 0) as quantity, b.min_quantity,
+                coalesce(td.quantity, 0) as to_deliver,
                 count(*) over () as total_count
            from products p
            left join stock_balances b on b.product_id = p.id and b.store_id = $1
+           left join to_deliver td on td.product_id = p.id
           where p.active
             and ($2::text is null or lower(p.code) = lower($2) or search_norm(p.name) like search_norm($3)
                  or search_norm(p.code) like search_norm($3))

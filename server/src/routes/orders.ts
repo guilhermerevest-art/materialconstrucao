@@ -17,6 +17,7 @@ import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+import { completeRemaining } from '../deliveries/queries.js';
 import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
 import { assertClientSite } from './clientSites.js';
 import {
@@ -392,6 +393,8 @@ export function ordersRouter(ctx: AppContext) {
     const body = moveSchema.parse(req.body);
     const { order, entered } = await withSession(pool, user, async (db) => {
       const entered = await moveOrderStage(db, id, user, body);
+      // Chegou em "Entregue"/"Retirado": o que faltava sair é registrado como entregue.
+      if (body.direction === 'next' && entered.is_final) await completeRemaining(db, id, user, entered.name);
       return { order: (await loadOrderView(db, id, user))!, entered };
     });
     // Depois do commit: a mudança de etapa vale mesmo se o WhatsApp falhar.

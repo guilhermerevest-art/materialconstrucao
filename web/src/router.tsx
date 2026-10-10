@@ -4,6 +4,8 @@ import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { DeliveriesPage } from './pages/DeliveriesPage';
+import { DeliveryProofPage } from './pages/DeliveryProofPage';
 import { LoginPage } from './pages/LoginPage';
 import { MonitorPage } from './pages/MonitorPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -94,6 +96,8 @@ export const router = createBrowserRouter([
       { path: 'relatorios', element: <ReportsPage /> },
       { path: 'monitor', element: <MonitorPage /> },
       { path: 'estoque', element: <StockPage /> },
+      { path: 'entregas', element: <DeliveriesPage /> },
+      { path: 'entregas/:id', element: <DeliveryProofPage /> },
       {
         element: <RequireAdmin />,
         children: [
