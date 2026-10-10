@@ -575,6 +575,19 @@ marcadas.
 Nota completa: **Dar entrada** abre a entrada de estoque já com os itens, a conversão de unidade e as
 duplicatas da nota, sem baixar e importar o XML. Depois de lançada, a nota mostra **Entrada nº** no monitor.
 
+### Pacote do contador
+
+**Notas fiscais → Contador** (admin): escolha o mês e **Baixar o pacote** gera um ZIP com os XMLs das notas
+emitidas (autorizadas e canceladas, pela data de emissão) e recebidas (as que deram entrada no estoque no mês e
+as do monitor emitidas no mês), mais `resumo.csv` (uma linha por nota: tipo, modelo, número, série, chave,
+datas, CNPJ/CPF, nome, valor, situação e se o XML está no pacote) e um `LEIA-ME.txt` com os totais. É o que o
+escritório importa para a escrituração e o SPED.
+
+Os XMLs ficam guardados no banco: o da nota emitida é baixado da ACBr API na primeira vez (o botão busca os que
+faltam, em lotes, antes de montar o ZIP; sem a ACBr API, o pacote sai com o que já está guardado); o da nota
+de compra vai junto com a entrada de estoque pelo XML. Entrada lançada à mão (sem XML) aparece só no resumo.
+O pacote usa o ambiente atual: em homologação, as notas são de teste e o LEIA-ME avisa.
+
 ### Limitações desta versão
 
 - Venda interestadual para consumidor final não contribuinte (DIFAL) e interestadual no regime normal

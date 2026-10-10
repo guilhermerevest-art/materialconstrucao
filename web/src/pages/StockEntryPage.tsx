@@ -159,6 +159,8 @@ export function StockEntryPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [storeId, setStoreId] = useState<string>(params.get('loja') ?? (user.store_id ? String(user.store_id) : ''));
   const [invoice, setInvoice] = useState<NfeInvoice | null>(null);
+  // XML como veio: vai com a entrada e fica guardado para o pacote do contador.
+  const [invoiceXml, setInvoiceXml] = useState<string | null>(null);
   const [manual, setManual] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [supplierName, setSupplierName] = useState('');
@@ -262,7 +264,8 @@ export function StockEntryPage() {
     setError(null);
     setReading(true);
     try {
-      const parsed = parseNfeXml(await read());
+      const text = await read();
+      const parsed = parseNfeXml(text);
       const { matches } = await api<{ matches: Match[] }>('/stock/entries/match', {
         method: 'POST',
         body: {
@@ -271,6 +274,7 @@ export function StockEntryPage() {
         },
       });
       setInvoice(parsed);
+      setInvoiceXml(text.length <= 800_000 ? text : null);
       setManual(false);
       setSupplierId(null);
       setSupplierName(parsed.supplierName ?? '');
@@ -308,6 +312,7 @@ export function StockEntryPage() {
 
   function startManual() {
     setInvoice(null);
+    setInvoiceXml(null);
     setManual(true);
     setError(null);
     setSupplierName('');
@@ -374,6 +379,7 @@ export function StockEntryPage() {
           issued_at: issued ? (issued.includes('T') ? issued : `${issued}T00:00:00-03:00`) : null,
           total_amount: invoice?.total ?? null,
           notes: notes || null,
+          xml: invoice ? invoiceXml : null,
           items,
         },
       });

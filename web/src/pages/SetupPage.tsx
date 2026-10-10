@@ -1,27 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Circle, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import { PageHeader } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Badge, Skeleton } from '@/components/ui/misc';
-import { api } from '@/lib/api';
 import { useDocumentTitle } from '@/lib/hooks';
+import { requiredSteps, useSetup } from '@/lib/setup';
 import type { SetupArea, SetupStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-/** Passos que contam para "pronto": os obrigatórios das áreas sem módulo e dos módulos ligados. */
-export function requiredSteps(areas: SetupArea[]) {
-  return areas.flatMap((a) => (a.module && !a.module.enabled ? [] : a.steps.filter((s) => !s.optional)));
-}
-
-export function useSetup(enabled = true) {
-  return useQuery({
-    queryKey: ['setup'],
-    queryFn: () => api<{ areas: SetupArea[] }>('/setup').then((r) => r.areas),
-    enabled,
-  });
-}
 
 function StepIcon({ step }: { step: SetupStep }) {
   if (step.status === 'done') return <CheckCircle2 className="size-5 shrink-0 text-success" aria-label="Pronto" />;

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { AppContext } from '../context.js';
+import { fiscalAccountantRouter } from './accountantRoutes.js';
 import { fiscalDocumentsRouter } from './documentsRoutes.js';
 import { fiscalInboundRouter } from './inboundRoutes.js';
 import { fiscalLookupRouter, fiscalSettingsRouter } from './settingsRoutes.js';
@@ -14,5 +15,6 @@ export function fiscalRouter(ctx: AppContext) {
   router.use('/lookup', fiscalLookupRouter(ctx));
   router.use('/documents', fiscalDocumentsRouter(ctx));
   router.use('/inbound', fiscalInboundRouter(ctx));
+  router.use('/accountant', fiscalAccountantRouter(ctx));
   return router;
 }

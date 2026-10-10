@@ -1,4 +1,4 @@
-import { FileOutput, Inbox } from 'lucide-react';
+import { Briefcase, FileOutput, Inbox } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { useUser } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
   );
 
-/** Abas do módulo fiscal. O monitor de notas recebidas é do administrador. */
+/** Abas do módulo fiscal. O monitor de notas recebidas e o pacote do contador são do administrador. */
 export function FiscalNav() {
   const user = useUser();
   return (
@@ -22,6 +22,12 @@ export function FiscalNav() {
         <NavLink to="/fiscal/recebidas" className={linkClass}>
           <Inbox />
           Notas recebidas (monitor)
+        </NavLink>
+      )}
+      {user.role === 'admin' && (
+        <NavLink to="/fiscal/contador" className={linkClass}>
+          <Briefcase />
+          Contador
         </NavLink>
       )}
     </nav>

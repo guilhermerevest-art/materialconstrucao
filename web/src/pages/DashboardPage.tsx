@@ -11,8 +11,8 @@ import { api } from '@/lib/api';
 import { useUser } from '@/lib/auth';
 import { formatDateTime, formatMoney, formatOrderNumber } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
+import { requiredSteps, useSetup } from '@/lib/setup';
 import type { Dashboard } from '@/lib/types';
-import { requiredSteps, useSetup } from './SetupPage';
 import { cn } from '@/lib/utils';
 
 const today = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());

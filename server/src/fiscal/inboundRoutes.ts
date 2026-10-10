@@ -431,12 +431,25 @@ export function fiscalInboundRouter(ctx: AppContext) {
     if (kind === 'pdf' && doc.summary) {
       throw new HttpError(409, 'Por enquanto só chegou o resumo da nota. Dê ciência da operação e busque as notas de novo para baixar o DANFE.');
     }
-    const { acbr } = await settingsFor(me);
     let file: { data: Buffer };
-    try {
-      file = await acbr.download(`/distribuicao/nfe/documentos/${encodeURIComponent(doc.acbr_id)}/${kind}`);
-    } catch (err) {
-      throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+    const cached =
+      kind === 'xml' && !doc.summary
+        ? await withSession(pool, me, (db) => db.query<{ xml: string | null }>('select xml from fiscal_inbound_documents where id = $1', [id]))
+        : null;
+    if (cached?.rows[0]?.xml) {
+      file = { data: Buffer.from(cached.rows[0].xml, 'utf8') };
+    } else {
+      const { acbr } = await settingsFor(me);
+      try {
+        file = await acbr.download(`/distribuicao/nfe/documentos/${encodeURIComponent(doc.acbr_id)}/${kind}`);
+      } catch (err) {
+        throw new HttpError(502, describeAcbrError(err), 'ACBR_FAILED');
+      }
+      // Nota completa (não o resumo): o XML não muda e fica guardado para o pacote do contador.
+      if (kind === 'xml' && !doc.summary) {
+        const xml = file.data.toString('utf8');
+        await withSession(pool, me, (db) => db.query('update fiscal_inbound_documents set xml = $2 where id = $1 and xml is null', [id, xml]));
+      }
     }
     res.setHeader('Content-Type', kind === 'pdf' ? 'application/pdf' : 'application/xml');
     res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="nfe-${doc.access_key}.${kind}"`);

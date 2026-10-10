@@ -79,6 +79,8 @@ const entrySchema = z.object({
   issued_at: z.iso.datetime({ offset: true }).nullable().default(null),
   total_amount: z.number().min(0).max(999_999_999).nullable().default(null),
   notes: optionalText(300),
+  // XML da nota (importado na tela): fica guardado para o pacote do contador.
+  xml: z.string().max(800_000, 'O XML da nota é grande demais.').nullable().default(null),
   items: z
     .array(
       z.object({
@@ -494,8 +496,8 @@ export function stockRouter(ctx: AppContext) {
       const computedTotal = body.items.reduce((sum, i) => sum + i.quantity * (i.unit_cost ?? 0), 0);
       const { rows } = await db.query<{ id: number }>(
         `insert into stock_entries (tenant_id, store_id, user_id, supplier_name, supplier_document, invoice_number,
-                                    invoice_series, access_key, issued_at, total_amount, notes, supplier_id, purchase_order_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                                    invoice_series, access_key, issued_at, total_amount, notes, supplier_id, purchase_order_id, xml)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          returning id`,
         [
           user.tenant_id,
@@ -511,6 +513,8 @@ export function stockRouter(ctx: AppContext) {
           body.notes,
           supplier?.id ?? null,
           body.purchase_order_id,
+          // Só o XML da própria nota (com a chave dela).
+          body.xml && body.access_key && body.xml.includes(body.access_key) ? body.xml : null,
         ],
       );
       const entryId = rows[0]!.id;
