@@ -93,6 +93,15 @@ export function addDays(iso: string, days: number) {
   return todayIso(new Date(y!, m! - 1, d! + days));
 }
 
+/** Dias de `from` até `to` ("2026-10-08" até "2026-10-10" = 2). */
+export function daysBetween(from: string, to: string) {
+  const toUtc = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y!, m! - 1, d!);
+  };
+  return Math.round((toUtc(to) - toUtc(from)) / 86_400_000);
+}
+
 /** "sexta-feira, 10 de outubro". */
 export function formatWeekday(iso: string) {
   const [y, m, d] = iso.split('-').map(Number);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { currentUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
+import { countFollowupsDue } from '../followups/queries.js';
 
 // Início do dia no fuso da loja, como timestamptz.
 const TODAY_START = `(date_trunc('day', now() at time zone $1) at time zone $1)`;
@@ -64,7 +65,10 @@ export function dashboardRouter(ctx: AppContext) {
             ).rows
           : [];
 
-      return { summary: summary.rows[0], recent: recent.rows, by_store: byStore };
+      // Orçamentos para retomar hoje: vendedor vê os dele; admin, os da rede.
+      const followupsDue = await countFollowupsDue(db, tz, onlyUserId);
+
+      return { summary: { ...summary.rows[0], followups_due: followupsDue }, recent: recent.rows, by_store: byStore };
     });
 
     res.json(data);

@@ -19,7 +19,7 @@ export function CancelOrderDialog({
   onOpenChange,
   onCancelled,
 }: {
-  order: Order;
+  order: Pick<Order, 'id' | 'status'>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCancelled: (order: Order) => void;
@@ -41,6 +41,7 @@ export function CancelOrderDialog({
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['monitor'] });
+      queryClient.invalidateQueries({ queryKey: ['followups'] });
       toast.success(isQuote ? 'Orçamento marcado como perdido.' : `Pedido nº ${formatOrderNumber(order.id)} cancelado.`);
       onCancelled(next);
       onOpenChange(false);

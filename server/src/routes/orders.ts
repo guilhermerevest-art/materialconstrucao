@@ -127,7 +127,7 @@ async function orderPix(db: pg.PoolClient, order: OrderDetail): Promise<OrderPdf
 }
 
 /** WhatsApp do cliente pronto para a EvolutionAPI. Só números antigos ou importados precisam de ajuste. */
-function clientNumber(order: OrderDetail) {
+export function clientNumber(order: Pick<OrderDetail, 'client_whatsapp'>) {
   return /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
 }
 
@@ -491,7 +491,8 @@ export function ordersRouter(ctx: AppContext) {
 
     const sentAt = await withSession(pool, user, async (db) => {
       const { rows } = await db.query<{ sent_at: Date }>(
-        'update orders set sent_at = now() where id = $1 returning sent_at',
+        // Enviar o PDF conta como contato: a retomada recomeça a contar daqui.
+        'update orders set sent_at = now(), followup_on = null where id = $1 returning sent_at',
         [id],
       );
       return rows[0]?.sent_at ?? null;

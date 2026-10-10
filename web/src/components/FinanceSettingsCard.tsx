@@ -53,7 +53,7 @@ export function FinanceSettingsCard() {
     <Card className="mt-6">
       <CardHeader className="items-start">
         <div className="flex items-start gap-3">
-          <Landmark className="mt-0.5 size-5 text-muted-foreground" aria-hidden />
+          <Landmark className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
           <div className="grid gap-0.5">
             <CardTitle>Financeiro</CardTitle>
             <CardDescription>

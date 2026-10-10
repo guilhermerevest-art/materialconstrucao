@@ -221,8 +221,8 @@ Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
   crediário, 3 parcelas, 30 dias, 30 dias. As formas que já existiam recebem o tipo pelo nome.
 - **Contas a receber:** pedido confirmado com o financeiro ligado gera as parcelas da forma escolhida (o centavo
   da divisão fica na 1ª), que aparecem no quadro **Pagamento** do pedido. Pedido sem forma gera uma parcela à
-  vista; pedidos confirmados antes de ligar o financeiro não geram parcelas. Cancelar o pedido cancela as parcelas; com
-  algo já recebido, o cancelamento é bloqueado até estornar o recebimento.
+  vista; pedidos confirmados antes de ligar o financeiro não geram parcelas. Cancelar o pedido cancela as
+  parcelas; com algo já recebido, o cancelamento é bloqueado até estornar o recebimento.
 - **Crediário:** só para cliente com limite (em Clientes → Crédito). O pedido é recusado se o cliente tem parcela
   vencida ou se passa do limite somando o que ele já deve em todas as lojas.
 - **Caixa:** cada operador abre o seu caixa (com o troco inicial) e recebe as parcelas por ele: busca o cliente
@@ -235,6 +235,27 @@ Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
   Banco Central: a confirmação é feita olhando o extrato. Baixa automática precisa de integração com o banco
   (PSP) e não faz parte desta versão.
 - O vendedor vê as parcelas e caixas da própria loja; o admin, de todas.
+
+## Retomada de orçamentos
+
+Aba **A retomar** em Pedidos e o aviso na tela inicial ("2 orçamentos para retomar hoje"). Funciona sem
+configurar nada.
+
+- **Quando aparece:** orçamento em aberto volta para a lista 3 dias depois do último contato (criação, envio
+  do PDF pelo WhatsApp ou retomada registrada), ou no dia combinado com o cliente. Orçamento sem nenhum
+  contato há mais de 60 dias sai da lista (continua na aba Orçamentos), para a lista não começar lotada.
+- **Retomar:** pelo WhatsApp da loja, com a mensagem pronta (nome do cliente, número e total do orçamento, que
+  o vendedor pode ajustar) e, se quiser, o PDF junto; ou registrar uma ligação, visita ou outro contato com
+  uma nota. Em todos, escolha o próximo contato: o padrão, amanhã, 1 semana, 15 dias ou outra data.
+  Se o WhatsApp falhar, nada é registrado.
+- **Histórico:** o quadro **Retomada** no orçamento mostra quando retomar, o último contato e cada conversa
+  (quem, como, nota ou mensagem enviada).
+- **Fechou ou perdeu:** converter em pedido tira da lista; **Perdido** (na lista ou no orçamento) marca como
+  perdido com o motivo. Reabrir o orçamento perdido traz de volta.
+- O vendedor vê os orçamentos da própria loja (com "Só os meus" para os dele); o aviso da tela inicial conta
+  só os dele. O admin vê a rede.
+- **Configurar (opcional):** em Administração → Configurações → Retomada de orçamentos, os dias (1 a 60) e a
+  mensagem, com `{cliente}`, `{vendedor}`, `{loja}`, `{pedido}` e `{total}`.
 
 ## Fluxo de pedidos e monitores
 

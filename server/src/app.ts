@@ -14,6 +14,7 @@ import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { deliveriesRouter } from './routes/deliveries.js';
 import { financeRouter } from './routes/finance.js';
+import { followupsRouter } from './routes/followups.js';
 import { monitorRouter } from './routes/monitor.js';
 import { ordersRouter } from './routes/orders.js';
 import { paymentMethodsRouter } from './routes/paymentMethods.js';
@@ -70,6 +71,7 @@ export function createApp(ctx: AppContext) {
   api.use(deliveriesRouter(ctx));
   api.use(separationRouter(ctx));
   api.use(financeRouter(ctx));
+  api.use(followupsRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));

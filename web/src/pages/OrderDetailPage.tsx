@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { CancelOrderDialog } from '@/components/CancelOrderDialog';
+import { FollowupCard } from '@/components/FollowupCard';
 import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
 import { OrderPaymentsCard } from '@/components/OrderPaymentsCard';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
@@ -61,6 +62,9 @@ export function OrderDetailPage() {
     queryClient.setQueryData(['order', id], next);
     queryClient.invalidateQueries({ queryKey: ['orders'] });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    // Enviar, converter e reabrir mudam a retomada do orçamento.
+    queryClient.invalidateQueries({ queryKey: ['followups'] });
+    queryClient.invalidateQueries({ queryKey: ['order-followups', id] });
   };
 
   const send = useMutation({
@@ -350,6 +354,8 @@ export function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {isQuote && <FollowupCard order={order} />}
         </aside>
       </div>
 

@@ -366,6 +366,8 @@ export type Dashboard = {
     quotes_today: number;
     open_quotes: number;
     open_quotes_amount: number;
+    /** Orçamentos para retomar hoje (do vendedor; da rede para o admin). */
+    followups_due: number;
   };
   recent: Pick<
     OrderSummary,
@@ -558,4 +560,63 @@ export type FinanceSettings = {
   pix_key: string | null;
   pix_merchant_name: string | null;
   pix_city: string | null;
+};
+
+export type FollowupChannel = 'whatsapp' | 'call' | 'visit' | 'other';
+
+/** Orçamento na lista de retomada. */
+export type FollowupItem = {
+  id: number;
+  total_amount: number;
+  created_at: string;
+  sent_at: string | null;
+  followup_count: number;
+  /** Dia combinado com o cliente, se houver. */
+  followup_on: string | null;
+  last_contact_at: string;
+  /** Dia da retomada (combinado ou calculado). */
+  due_on: string;
+  /** Dias de atraso; negativo nos próximos. */
+  days_late: number;
+  store_id: number;
+  store_name: string;
+  user_id: number;
+  user_name: string;
+  client_id: number;
+  client_name: string;
+  client_whatsapp: string;
+  last_channel: FollowupChannel | null;
+  last_note: string | null;
+};
+
+/** Um contato registrado na retomada. */
+export type Followup = {
+  id: number;
+  channel: FollowupChannel;
+  note: string | null;
+  message: string | null;
+  with_pdf: boolean;
+  next_on: string | null;
+  created_at: string;
+  user_id: number;
+  user_name: string;
+};
+
+export type FollowupHistory = {
+  status: OrderStatus;
+  followup_count: number;
+  followup_on: string | null;
+  last_contact_at: string;
+  due_on: string;
+  /** Dias depois do último contato, da configuração. */
+  days: number;
+  /** Mensagem sugerida para o WhatsApp, já com o nome do cliente e o total. */
+  message: string;
+  items: Followup[];
+};
+
+export type FollowupSettings = {
+  followup_days: number;
+  followup_message: string | null;
+  default_message: string;
 };

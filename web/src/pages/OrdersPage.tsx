@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { CheckCheck, Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
+import { FollowupList } from '@/components/FollowupList';
 import { EmptyState, PageHeader, Pagination, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,6 +21,7 @@ const PAGE_SIZE = 20;
 const STATUS_TABS = [
   { value: '', label: 'Todos' },
   { value: 'quote', label: 'Orçamentos' },
+  { value: 'followup', label: 'A retomar' },
   { value: 'order', label: 'Pedidos' },
   { value: 'cancelled', label: 'Cancelados' },
 ];
@@ -33,6 +35,8 @@ export function OrdersPage() {
 
   // Filtros ficam na URL: voltar do detalhe mantém a lista como estava.
   const status = params.get('status') ?? '';
+  // "A retomar" é uma lista à parte (orçamentos para voltar a falar com o cliente).
+  const followup = status === 'followup';
   const from = params.get('de') ?? '';
   const to = params.get('ate') ?? '';
   const storeId = params.get('loja') ?? '';
@@ -72,6 +76,7 @@ export function OrdersPage() {
     queryKey: ['orders', filters],
     queryFn: () => api<Paginated<OrderSummary>>(`/orders${toQuery(filters)}`),
     placeholderData: keepPreviousData,
+    enabled: !followup,
   });
 
   const hasFilters = Boolean(status || from || to || q || storeId || mine);
@@ -94,14 +99,14 @@ export function OrdersPage() {
 
       <Card>
         <div className="flex flex-wrap items-end gap-3 border-b border-border p-4">
-          <div className="flex rounded-md border border-input bg-background p-0.5" role="group" aria-label="Tipo">
+          <div className="flex flex-wrap rounded-md border border-input bg-background p-0.5" role="group" aria-label="Tipo">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => update({ status: tab.value })}
                 aria-pressed={status === tab.value}
                 className={cn(
-                  'h-8 rounded px-3 text-sm font-medium',
+                  'h-8 rounded px-3 text-sm font-medium whitespace-nowrap',
                   status === tab.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -121,20 +126,22 @@ export function OrdersPage() {
             />
           </div>
 
-          <div className="grid gap-1 sm:flex sm:items-end sm:gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor="filtro-de" className="text-xs text-muted-foreground">
-                De
-              </Label>
-              <Input id="filtro-de" type="date" value={from} onChange={(e) => update({ de: e.target.value })} className="w-full sm:w-40" />
+          {!followup && (
+            <div className="grid gap-1 sm:flex sm:items-end sm:gap-3">
+              <div className="grid gap-1">
+                <Label htmlFor="filtro-de" className="text-xs text-muted-foreground">
+                  De
+                </Label>
+                <Input id="filtro-de" type="date" value={from} onChange={(e) => update({ de: e.target.value })} className="w-full sm:w-40" />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="filtro-ate" className="text-xs text-muted-foreground">
+                  Até
+                </Label>
+                <Input id="filtro-ate" type="date" value={to} onChange={(e) => update({ ate: e.target.value })} className="w-full sm:w-40" />
+              </div>
             </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filtro-ate" className="text-xs text-muted-foreground">
-                Até
-              </Label>
-              <Input id="filtro-ate" type="date" value={to} onChange={(e) => update({ ate: e.target.value })} className="w-full sm:w-40" />
-            </div>
-          </div>
+          )}
 
           {isAdmin && (
             <NativeSelect
@@ -172,7 +179,17 @@ export function OrdersPage() {
           )}
         </div>
 
-        {orders.isPending ? (
+        {followup ? (
+          <FollowupList
+            q={q}
+            storeId={storeId}
+            mine={mine}
+            scope={params.get('retomar') === 'proximos' ? 'upcoming' : 'due'}
+            onScopeChange={(scope) => update({ retomar: scope === 'upcoming' ? 'proximos' : null })}
+            page={page}
+            onPageChange={(next) => update({ pagina: String(next) })}
+          />
+        ) : orders.isPending ? (
           <div className="grid gap-2 p-4">
             {Array.from({ length: 6 }, (_, i) => (
               <Skeleton key={i} className="h-10" />
