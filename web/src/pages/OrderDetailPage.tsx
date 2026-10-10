@@ -21,6 +21,7 @@ import { FollowupCard } from '@/components/FollowupCard';
 import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
 import { OrderPaymentsCard } from '@/components/OrderPaymentsCard';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
+import { OrderReturnsCard } from '@/components/OrderReturnsCard';
 import { OrderFiscalCard } from '@/components/fiscal/OrderFiscalCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -258,6 +259,8 @@ export function OrderDetailPage() {
 
           {order.status === 'order' && order.delivery_tracking && <OrderDeliveriesCard order={order} />}
 
+          {order.status === 'order' && <OrderReturnsCard order={order} />}
+
           {order.delivery_address && (
             <Card>
               <CardHeader>
@@ -293,6 +296,18 @@ export function OrderDetailPage() {
             }
           />
           <PriceTag cents={Math.round(order.total_amount * 100)} />
+          {(order.credit_used ?? 0) > 0 && (
+            <dl className="grid gap-1.5 rounded-lg border border-border bg-card px-5 py-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Pago com crédito (vale-troca)</dt>
+                <dd className="font-medium text-success tabular-nums">- {formatMoney(order.credit_used!)}</dd>
+              </div>
+              <div className="flex justify-between gap-3 font-semibold">
+                <dt>A pagar</dt>
+                <dd className="tabular-nums">{formatMoney(Math.round((order.total_amount - order.credit_used!) * 100) / 100)}</dd>
+              </div>
+            </dl>
+          )}
 
           {order.status !== 'quote' && user.finance_enabled && <OrderPaymentsCard order={order} />}
           {order.status !== 'quote' && user.fiado_enabled && order.payment_method_kind === 'fiado' && <FiadoOrderCard order={order} />}

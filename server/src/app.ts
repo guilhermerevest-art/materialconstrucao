@@ -18,6 +18,7 @@ import { financeRouter } from './routes/finance.js';
 import { fiadoRouter } from './routes/fiado.js';
 import { followupsRouter } from './routes/followups.js';
 import { pricingRouter } from './routes/pricing.js';
+import { returnsRouter } from './routes/returns.js';
 import { monitorRouter } from './routes/monitor.js';
 import { ordersRouter } from './routes/orders.js';
 import { paymentMethodsRouter } from './routes/paymentMethods.js';
@@ -77,6 +78,7 @@ export function createApp(ctx: AppContext) {
   api.use(followupsRouter(ctx));
   api.use(pricingRouter(ctx));
   api.use(fiadoRouter(ctx));
+  api.use(returnsRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/fiscal', fiscalRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));

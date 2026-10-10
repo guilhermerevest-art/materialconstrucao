@@ -288,6 +288,23 @@ aí aparece a forma de pagamento **Fiado** no PDV e o menu **Financeiro → Fiad
   mensagem (editável, com `{cliente}`, `{loja}`, `{saldo}`, `{vencido}`, `{vencimento}`) e o extrato.
 - **Ajuste** (admin): saldo da caderneta de papel, acerto ou dívida perdoada, sempre com motivo.
 
+## Devolução e troca
+
+Quadro **Devoluções** no pedido confirmado, botão **Devolução ou troca**.
+
+- **O que volta:** só o que o cliente já levou (entregue ou retirado) e ainda não devolveu; em pedidos de antes
+  do controle de entrega, o vendido. O valor de cada item já considera o desconto do pedido.
+- **Estoque:** volta para a prateleira da loja do pedido; desmarque "volta" no que veio avariado.
+- **Como o valor volta:** dinheiro (com o financeiro ligado, sai do caixa aberto e do dinheiro esperado da
+  gaveta), PIX ou estorno no cartão (feitos por fora), **crédito para troca**, abatimento no **fiado** ou nas
+  **parcelas em aberto** do pedido (da última para a primeira), ou sem devolver valor (garantia).
+- **Troca:** o crédito para troca vira saldo do cliente (vale) e o sistema já abre o pedido novo com ele. No
+  PDV, cliente com crédito mostra o saldo e "Usar neste pedido"; o pedido mostra "Pago com crédito" e o que
+  falta pagar (também no PDF). As parcelas e o fiado do pedido novo são só do que falta. O crédito sai do
+  saldo na confirmação; cancelar o pedido devolve o crédito.
+- Pedido com devolução não é cancelado: o resto também se devolve.
+- A NF-e de devolução (quando o pedido tem nota) ainda é emitida fora do sistema.
+
 ## Retomada de orçamentos
 
 Aba **A retomar** em Pedidos e o aviso na tela inicial ("2 orçamentos para retomar hoje"). Funciona sem

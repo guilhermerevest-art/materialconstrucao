@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useBlocker, useNavigate, useParams } from 'react-router';
+import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { ClientSitesDialog, siteDeliveryAddress, useClientSites } from '@/components/ClientSitesDialog';
 import { CartTable, type CartItem } from '@/components/pdv/CartTable';
@@ -26,6 +26,7 @@ import {
   formatPercent,
   formatQuantity,
   lineTotalCents,
+  moneyToInput,
   parseDecimal,
 } from '@/lib/format';
 import { useDebouncedValue, useDocumentTitle, useHotkeys } from '@/lib/hooks';
@@ -69,6 +70,8 @@ export function OrderEditorPage() {
   const [discountText, setDiscountText] = useState('');
   const [storeId, setStoreId] = useState<number | null>(user.store_id);
   const [errors, setErrors] = useState<{ client?: string; items?: string; store?: string }>({});
+  const [creditText, setCreditText] = useState('');
+  const [searchParams] = useSearchParams();
   const [approval, setApproval] = useState<DiscountApprovalRequest | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const dirty = useRef(false);
@@ -117,10 +120,31 @@ export function OrderEditorPage() {
     setPaymentMethodId(order.payment_method_id);
     setDeliveryAddress(order.delivery_address ?? '');
     setClientSiteId(order.client_site_id);
+    setCreditText(order.credit_used ? moneyToInput(order.credit_used) : '');
     setDiscountType(order.discount_type ?? 'percent');
     setDiscountText(order.discount_value ? decimalToInput(order.discount_value) : '');
     setStoreId(order.store_id);
   }, [existing.data]);
+
+  // Pedido novo vindo de uma troca (?cliente=ID): já abre com o cliente escolhido.
+  const presetClientId = editingId === null ? Number(searchParams.get('cliente')) || null : null;
+  const presetClient = useQuery({
+    queryKey: ['client', presetClientId],
+    queryFn: () => api<{ client: Client }>(`/clients/${presetClientId}`).then((r) => r.client),
+    enabled: presetClientId !== null,
+  });
+  useEffect(() => {
+    if (presetClient.data && !client) setClient(presetClient.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetClient.data]);
+
+  // Crédito do cliente (vale-troca de uma devolução) para usar neste pedido.
+  const credits = useQuery({
+    queryKey: ['client-credits', client?.id],
+    queryFn: () => api<{ balance: number }>(`/clients/${client!.id}/credits`).then((r) => r.balance),
+    enabled: Boolean(client),
+  });
+  const creditAvailable = (credits.data ?? 0) + (editingId && existing.data?.client_id === client?.id ? (existing.data?.credit_used ?? 0) : 0);
 
   const sites = useClientSites(client?.id);
   // Obras encerradas saem da lista, menos a que o orçamento já tinha.
@@ -191,6 +215,16 @@ export function OrderEditorPage() {
           : null;
   const appliedDiscountCents = discountValue && !discountError ? discountCents(subtotalCents, discountType, discountValue) : 0;
   const totalCents = subtotalCents - appliedDiscountCents;
+  const creditValue = creditText.trim() ? parseDecimal(creditText) : 0;
+  const creditError =
+    creditValue === null || creditValue < 0
+      ? 'Valor inválido.'
+      : Math.round(creditValue * 100) > totalCents
+        ? 'Passa do total do pedido.'
+        : creditValue > creditAvailable + 0.005
+          ? `O cliente tem ${formatMoney(creditAvailable)} de crédito.`
+          : null;
+  const creditCents = creditError || !creditValue ? 0 : Math.round(creditValue * 100);
 
   const save = useMutation({
     mutationFn: (discountApproval?: { username: string; password: string }) => {
@@ -206,6 +240,7 @@ export function OrderEditorPage() {
         store_id: isAdmin ? storeId : undefined,
         items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
         discount_approval: discountApproval,
+        credit_used: creditCents / 100,
       };
       return editingId
         ? api<{ order: Order }>(`/orders/${editingId}`, { method: 'PUT', body })
@@ -307,6 +342,10 @@ export function OrderEditorPage() {
     if (discountError) {
       toast.error(`Desconto: ${discountError}`);
       return document.getElementById('desconto')?.focus();
+    }
+    if (creditError && creditText.trim()) {
+      toast.error(`Crédito do cliente: ${creditError}`);
+      return document.getElementById('credito-usado')?.focus();
     }
     save.mutate(undefined);
   }
@@ -488,7 +527,7 @@ export function OrderEditorPage() {
                   ))}
                 </NativeSelect>
                 {client && user.fiado_enabled && paymentOptions.find((m) => m.id === paymentMethodId)?.kind === 'fiado' && (
-                  <FiadoPdvHint clientId={client.id} totalCents={totalCents} />
+                  <FiadoPdvHint clientId={client.id} totalCents={totalCents - creditCents} />
                 )}
               </Field>
 
@@ -604,6 +643,44 @@ export function OrderEditorPage() {
             cents={totalCents}
             caption={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'itens'}` : undefined}
           />
+          {client && creditAvailable > 0 && (
+            <div className="grid gap-2 rounded-lg border border-success/40 bg-card px-5 py-3 text-sm">
+              <p>
+                {client.name} tem <strong className="text-success tabular-nums">{formatMoney(creditAvailable)}</strong> de crédito (troca).
+              </p>
+              <Field label="Usar neste pedido" htmlFor="credito-usado" error={creditText.trim() ? creditError : null}>
+                <div className="flex gap-2">
+                  <Input
+                    id="credito-usado"
+                    inputMode="decimal"
+                    value={creditText}
+                    onChange={(e) => {
+                      setCreditText(e.target.value);
+                      changed();
+                    }}
+                    placeholder="0,00"
+                    className="text-right tabular-nums"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setCreditText(moneyToInput(Math.min(creditAvailable, totalCents / 100)));
+                      changed();
+                    }}
+                  >
+                    Usar tudo
+                  </Button>
+                </div>
+              </Field>
+              {creditCents > 0 && (
+                <p className="flex justify-between font-semibold">
+                  <span>A pagar</span>
+                  <span className="tabular-nums">{centsToMoney(totalCents - creditCents)}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           <Button size="lg" className="w-full" onClick={submit} loading={save.isPending}>
             {saveLabel}

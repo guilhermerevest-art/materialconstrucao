@@ -68,6 +68,8 @@ export type OrderDetail = {
   discount_approved_percent: number | null;
   /** Tipo da forma de pagamento (dinheiro, crediário, fiado...). */
   payment_method_kind: string | null;
+  /** Parte do total paga com o crédito do cliente (vale-troca). */
+  credit_used: number;
   store_name: string;
   store_address: string | null;
   store_phone: string | null;
@@ -116,7 +118,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
             c.name as client_name, c.whatsapp as client_whatsapp,
             c.contact_name as client_contact_name, c.person_type as client_person_type,
             o.price_list_name, o.discount_approved_percent, da.name as discount_approved_by_name,
-            pmk.kind as payment_method_kind,
+            pmk.kind as payment_method_kind, o.credit_used,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,
             u.name as user_name

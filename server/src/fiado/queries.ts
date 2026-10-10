@@ -165,7 +165,7 @@ type FiadoOrder = { id: number; tenant_id: number; store_id: number; client_id: 
 
 async function loadFiadoOrder(db: pg.PoolClient, orderId: number): Promise<FiadoOrder | null> {
   const { rows } = await db.query<FiadoOrder & { kind: string | null }>(
-    `select o.id, o.tenant_id, o.store_id, o.client_id, c.name as client_name, o.total_amount, c.credit_limit,
+    `select o.id, o.tenant_id, o.store_id, o.client_id, c.name as client_name, o.total_amount - o.credit_used as total_amount, c.credit_limit,
             c.fiado_due_day as client_due_day, o.user_id, pm.kind
        from orders o
        join clients c on c.id = o.client_id

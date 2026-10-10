@@ -255,8 +255,10 @@ function drawTotal(doc: Doc, order: OrderDetail, startY: number): number {
   const boxHeight = 46;
   const hasDiscount = order.discount_amount > 0;
   const breakdownHeight = hasDiscount ? 34 : 0;
+  // Parte paga com o crédito do cliente (vale-troca): sai embaixo do total, com o que falta pagar.
+  const creditHeight = order.credit_used > 0 ? 36 : 0;
   let y = startY;
-  if (y + breakdownHeight + boxHeight > contentBottom(doc)) {
+  if (y + breakdownHeight + boxHeight + creditHeight > contentBottom(doc)) {
     doc.addPage();
     y = MARGIN;
   }
@@ -292,6 +294,18 @@ function drawTotal(doc: Doc, order: OrderDetail, startY: number): number {
     .fontSize(18)
     .fillColor(INK)
     .text(formatMoney(order.total_amount), x + 70, y + 13, { width: boxWidth - 84, align: 'right' });
+  if (order.credit_used > 0) {
+    const rows: [string, string][] = [
+      ['Pago com crédito (vale-troca)', `- ${formatMoney(order.credit_used)}`],
+      ['A pagar', formatMoney(Math.round((order.total_amount - order.credit_used) * 100) / 100)],
+    ];
+    rows.forEach(([label, value], index) => {
+      const rowY = y + boxHeight + 8 + index * 14;
+      doc.font(index ? 'Helvetica-Bold' : 'Helvetica').fontSize(9.5).fillColor(index ? INK : MUTED).text(label, x + 14, rowY, { width: 140 });
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(value, x + 120, rowY, { width: boxWidth - 134, align: 'right' });
+    });
+    return y + boxHeight + creditHeight;
+  }
   return y + boxHeight;
 }
 

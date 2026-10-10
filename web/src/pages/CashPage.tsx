@@ -456,10 +456,10 @@ export function CashPage() {
                   <li key={`m${m.id}`} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
                     <span className="w-14 text-muted-foreground tabular-nums">{formatDateTime(m.created_at).slice(-5)}</span>
                     <span className="min-w-0 flex-1">
-                      {m.kind === 'withdrawal' ? 'Sangria' : 'Suprimento'}: {m.reason}
+                      {m.kind === 'withdrawal' ? 'Sangria' : m.kind === 'refund' ? 'Devolução' : 'Suprimento'}: {m.reason}
                     </span>
-                    <span className={cn('w-24 text-right font-semibold tabular-nums', m.kind === 'withdrawal' ? 'text-destructive' : 'text-success')}>
-                      {m.kind === 'withdrawal' ? '-' : '+'}
+                    <span className={cn('w-24 text-right font-semibold tabular-nums', m.kind === 'deposit' ? 'text-success' : 'text-destructive')}>
+                      {m.kind === 'deposit' ? '+' : '-'}
                       {formatMoney(m.amount)}
                     </span>
                   </li>

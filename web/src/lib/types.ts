@@ -291,6 +291,8 @@ export type Order = {
   discount_approved_by_name?: string | null;
   discount_approved_percent?: number | null;
   payment_method_kind?: PaymentKind | null;
+  /** Parte do total paga com o crédito do cliente (vale-troca). */
+  credit_used?: number;
   client_whatsapp: string;
   store_name: string;
   store_address: string | null;
@@ -732,7 +734,7 @@ export type CashView = {
   session: CashSession;
   summary: CashSummary;
   payments: ReceivablePayment[];
-  movements: { id: number; kind: 'withdrawal' | 'deposit'; amount: number; reason: string; created_at: string; user_name: string }[];
+  movements: { id: number; kind: 'withdrawal' | 'deposit' | 'refund'; amount: number; reason: string; created_at: string; user_name: string }[];
 };
 
 export type ClientCredit = {
@@ -920,4 +922,39 @@ export type FiadoAccount = {
   blocked: boolean;
   entries: FiadoEntry[];
   message: string;
+};
+
+export type RefundMethod = 'cash' | 'pix' | 'card' | 'credit' | 'fiado' | 'receivables' | 'none';
+
+export type ReturnableItem = {
+  order_item_id: number;
+  product_id: number;
+  product_code: string | null;
+  product_name: string;
+  unit: string;
+  sold: number;
+  /** Levado pelo cliente (entregue/retirado); sem controle de entrega, o vendido. */
+  taken: number;
+  returned: number;
+  returnable: number;
+  /** Preço unitário com o desconto do pedido rateado. */
+  net_price: number;
+};
+
+export type OrderReturn = {
+  id: number;
+  reason: string;
+  refund_method: RefundMethod;
+  amount: number;
+  created_at: string;
+  user_name: string;
+  items: { product_name: string; unit: string; quantity: number; amount: number; restock: boolean }[];
+};
+
+export type OrderReturnsView = {
+  status: OrderStatus;
+  items: ReturnableItem[];
+  returns: OrderReturn[];
+  client_credit: number;
+  options: { finance: boolean; cash_open: boolean; fiado: boolean; payment_kind: PaymentKind | null; open_receivables: number };
 };

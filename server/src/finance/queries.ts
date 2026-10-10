@@ -69,7 +69,7 @@ export async function loadClientCredit(db: pg.PoolClient, clientId: number, time
  */
 export async function assertStoreCredit(db: pg.PoolClient, orderId: number, timeZone: string) {
   const { rows } = await db.query<OrderCredit>(
-    `select o.client_id, c.name as client_name, o.total_amount, pm.kind, c.credit_limit
+    `select o.client_id, c.name as client_name, o.total_amount - o.credit_used as total_amount, pm.kind, c.credit_limit
        from orders o
        join clients c on c.id = o.client_id
        left join payment_methods pm on pm.id = o.payment_method_id
@@ -123,7 +123,7 @@ type OrderTerms = {
  */
 export async function createOrderReceivables(db: pg.PoolClient, orderId: number, timeZone: string) {
   const { rows } = await db.query<OrderTerms>(
-    `select o.tenant_id, o.store_id, o.client_id, o.total_amount, o.payment_method_id, o.payment_method_name,
+    `select o.tenant_id, o.store_id, o.client_id, o.total_amount - o.credit_used as total_amount, o.payment_method_id, o.payment_method_name,
             pm.kind, pm.installments, pm.first_due_days, pm.interval_days
        from orders o
        left join payment_methods pm on pm.id = o.payment_method_id
@@ -228,21 +228,24 @@ export async function sessionSummary(db: pg.PoolClient, session: CashSession) {
       order by sum(amount) desc`,
     [session.id],
   );
-  const movements = await db.query<{ withdrawals: number; deposits: number }>(
+  const movements = await db.query<{ withdrawals: number; deposits: number; refunds: number }>(
     `select coalesce(sum(amount) filter (where kind = 'withdrawal'), 0) as withdrawals,
-            coalesce(sum(amount) filter (where kind = 'deposit'), 0) as deposits
+            coalesce(sum(amount) filter (where kind = 'deposit'), 0) as deposits,
+            coalesce(sum(amount) filter (where kind = 'refund'), 0) as refunds
        from cash_movements where cash_session_id = $1`,
     [session.id],
   );
   const cash = methods.rows.filter((m) => m.kind === 'cash').reduce((sum, m) => sum + m.amount, 0);
-  const { withdrawals, deposits } = movements.rows[0]!;
-  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals) * 100) / 100;
+  const { withdrawals, deposits, refunds } = movements.rows[0]!;
+  // Devolução em dinheiro também sai da gaveta.
+  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals - refunds) * 100) / 100;
   const received = Math.round(methods.rows.reduce((sum, m) => sum + m.amount, 0) * 100) / 100;
   return {
     methods: methods.rows,
     received,
     withdrawals,
     deposits,
+    refunds,
     expected_cash: expectedCash,
     difference: session.counted_amount === null ? null : Math.round((session.counted_amount - expectedCash) * 100) / 100,
   };
