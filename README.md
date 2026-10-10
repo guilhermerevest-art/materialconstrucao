@@ -124,6 +124,12 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   O servidor calcula subtotal, desconto e total; o total da listagem, do painel e do WhatsApp já vem com desconto.
   Ao editar o orçamento, o desconto é recalculado sobre os itens novos (o percentual continua o mesmo).
 - **Endereço de entrega** é opcional (em branco = cliente retira na loja) e sai no PDF.
+- **Obras do cliente:** cada cliente pode ter várias obras (nome, endereço, contato na obra). No PDV,
+  escolher a obra preenche o endereço de entrega, que continua editável; o pedido guarda o texto e a obra.
+  Obra encerrada (desativada) sai da escolha; excluir a obra não muda o endereço dos pedidos que já a usaram.
+  Os dados fiscais do cliente (CPF/CNPJ, IE, endereço com código IBGE) ficam com o módulo fiscal.
+- **Limite de crédito** (só o admin define, em Clientes): quanto o cliente pode dever no crediário.
+  Em branco, ele não compra no crediário.
 - WhatsApp do cliente é guardado só com dígitos e DDI (`(11) 98765-4321` vira `5511987654321`).
   Número de outro país deve começar com `+`.
 - **O mesmo WhatsApp não pode ficar em dois cadastros de cliente.** Ao salvar um número que

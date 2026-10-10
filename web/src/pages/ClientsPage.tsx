@@ -1,8 +1,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { HandCoins, HardHat, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { ClientCreditDialog } from '@/components/ClientCreditDialog';
 import { ClientFormDialog } from '@/components/ClientFormDialog';
+import { ClientSitesDialog } from '@/components/ClientSitesDialog';
 import { EmptyState, PageHeader, Pagination } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,7 +14,7 @@ import { Skeleton } from '@/components/ui/misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { api, ApiError, toQuery } from '@/lib/api';
 import { useUser } from '@/lib/auth';
-import { formatDate, formatWhatsapp } from '@/lib/format';
+import { formatDate, formatMoney, formatWhatsapp } from '@/lib/format';
 import { useDebouncedValue, useDocumentTitle } from '@/lib/hooks';
 import type { Client, Paginated } from '@/lib/types';
 
@@ -26,6 +28,8 @@ export function ClientsPage() {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [deleting, setDeleting] = useState<Client | null>(null);
+  const [sitesOf, setSitesOf] = useState<Client | null>(null);
+  const [creditOf, setCreditOf] = useState<Client | null>(null);
   const q = useDebouncedValue(search.trim(), 300);
 
   const clients = useQuery({
@@ -103,6 +107,8 @@ export function ClientsPage() {
                 <TR>
                   <TH className="pl-4">Nome</TH>
                   <TH>WhatsApp</TH>
+                  <TH>Obras</TH>
+                  <TH className="text-right">Crédito</TH>
                   <TH>Cadastrado em</TH>
                   <TH className="pr-4 text-right">
                     <span className="sr-only">Ações</span>
@@ -114,6 +120,24 @@ export function ClientsPage() {
                   <TR key={client.id}>
                     <TD className="pl-4 font-medium">{client.name}</TD>
                     <TD className="tabular-nums">{formatWhatsapp(client.whatsapp)}</TD>
+                    <TD>
+                      <Button variant="ghost" size="sm" onClick={() => setSitesOf(client)} aria-label={`Obras de ${client.name}`}>
+                        <HardHat />
+                        {client.sites_count ? client.sites_count : 'Cadastrar'}
+                      </Button>
+                    </TD>
+                    <TD className="text-right tabular-nums">
+                      {user.role === 'admin' ? (
+                        <Button variant="ghost" size="sm" onClick={() => setCreditOf(client)} aria-label={`Crédito de ${client.name}`}>
+                          <HandCoins />
+                          {client.credit_limit != null ? formatMoney(client.credit_limit) : 'Sem crediário'}
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {client.credit_limit != null ? formatMoney(client.credit_limit) : '—'}
+                        </span>
+                      )}
+                    </TD>
                     <TD className="text-muted-foreground tabular-nums">{formatDate(client.created_at)}</TD>
                     <TD className="pr-4">
                       <div className="flex justify-end gap-1">
@@ -153,6 +177,8 @@ export function ClientsPage() {
         onOpenChange={(open) => setEditing((current) => ({ ...current, open }))}
         client={editing.client}
       />
+      {sitesOf && <ClientSitesDialog client={sitesOf} open onOpenChange={(open) => !open && setSitesOf(null)} />}
+      {creditOf && <ClientCreditDialog client={creditOf} open onOpenChange={(open) => !open && setCreditOf(null)} />}
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}

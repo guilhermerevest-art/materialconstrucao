@@ -9,6 +9,7 @@ import { authenticate, requireAdmin } from './auth.js';
 import type { AppContext } from './context.js';
 import { errorHandler } from './errors.js';
 import { authRouter } from './routes/auth.js';
+import { clientSitesRouter } from './routes/clientSites.js';
 import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { monitorRouter } from './routes/monitor.js';
@@ -54,6 +55,7 @@ export function createApp(ctx: AppContext) {
   api.use(authenticate(ctx));
   api.use('/dashboard', dashboardRouter(ctx));
   api.use('/clients', clientsRouter(ctx));
+  api.use(clientSitesRouter(ctx));
   api.use('/products', productsRouter(ctx));
   api.use('/orders', ordersRouter(ctx));
   api.use('/payment-methods', paymentMethodsRouter(ctx));

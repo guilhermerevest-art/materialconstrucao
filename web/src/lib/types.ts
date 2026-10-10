@@ -33,6 +33,25 @@ export type Client = {
   name: string;
   whatsapp: string;
   created_at: string;
+  /** Limite do crediário. Nulo: o cliente não compra no crediário. */
+  credit_limit?: number | null;
+  /** Obras ativas do cliente (só na listagem). */
+  sites_count?: number;
+};
+
+/** Obra (endereço de entrega) do cliente. */
+export type ClientSite = {
+  id: number;
+  client_id: number;
+  name: string;
+  address: string;
+  contact_name: string | null;
+  /** Só dígitos, com DDI, como o WhatsApp do cliente. */
+  contact_phone: string | null;
+  notes: string | null;
+  active: boolean;
+  orders_count: number;
+  created_at: string;
 };
 
 export type Product = {
@@ -109,6 +128,9 @@ export type Order = {
   total_amount: number;
   notes: string | null;
   delivery_address: string | null;
+  /** Obra do cliente escolhida no PDV. */
+  client_site_id: number | null;
+  client_site_name: string | null;
   payment_method_id: number | null;
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;

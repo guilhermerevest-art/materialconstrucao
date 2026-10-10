@@ -18,6 +18,7 @@ import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, 
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
 import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
+import { assertClientSite } from './clientSites.js';
 import {
   loadOrderWorkflow,
   moveOrderStage,
@@ -40,6 +41,8 @@ const orderSchema = z.object({
   store_id: z.number().int().positive().nullable().optional(),
   payment_method_id: z.number().int().positive().nullable().default(null),
   delivery_address: optionalText(300),
+  // Obra do cliente escolhida no PDV; o endereço de entrega continua sendo o texto acima.
+  client_site_id: z.number().int().positive().nullable().default(null),
   discount_type: z.enum(['percent', 'amount'], 'Tipo de desconto inválido.').nullable().default(null),
   discount_value: z
     .number('Informe o valor do desconto.')
@@ -248,11 +251,12 @@ export function ordersRouter(ctx: AppContext) {
     const order = await withSession(pool, user, async (db) => {
       if (user.role === 'admin') await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      await assertClientSite(db, body.client_site_id, body.client_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id);
       const { rows } = await db.query<{ id: number }>(
         `insert into orders (tenant_id, user_id, store_id, client_id, status, notes, payment_method_id, payment_method_name,
-                             delivery_address, discount_type, discount_value, confirmed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, case when $5 = 'order' then now() end)
+                             delivery_address, discount_type, discount_value, client_site_id, confirmed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, case when $5 = 'order' then now() end)
          returning id`,
         [
           user.tenant_id,
@@ -266,6 +270,7 @@ export function ordersRouter(ctx: AppContext) {
           body.delivery_address,
           body.discount_type,
           body.discount_value,
+          body.client_site_id,
         ],
       );
       const id = rows[0]!.id;
@@ -282,8 +287,13 @@ export function ordersRouter(ctx: AppContext) {
     const body = orderSchema.parse(req.body);
 
     const order = await withSession(pool, user, async (db) => {
-      const { rows } = await db.query<{ status: string; store_id: number; payment_method_id: number | null }>(
-        'select status, store_id, payment_method_id from orders where id = $1 for update',
+      const { rows } = await db.query<{
+        status: string;
+        store_id: number;
+        payment_method_id: number | null;
+        client_site_id: number | null;
+      }>(
+        'select status, store_id, payment_method_id, client_site_id from orders where id = $1 for update',
         [id],
       );
       const current = rows[0];
@@ -294,6 +304,7 @@ export function ordersRouter(ctx: AppContext) {
       const storeId = user.role === 'admin' && body.store_id ? body.store_id : current.store_id;
       if (storeId !== current.store_id) await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
       await assertExists(db, 'clients', body.client_id, 'Cliente não encontrado. Selecione o cliente de novo.');
+      await assertClientSite(db, body.client_site_id, body.client_id, current.client_site_id);
       const paymentMethodName = await resolvePaymentMethod(db, body.payment_method_id, current.payment_method_id);
 
       const previous = await db.query<{ product_id: number; unit_price: number }>(
@@ -304,7 +315,7 @@ export function ordersRouter(ctx: AppContext) {
         `update orders
             set client_id = $2, status = $3, notes = $4, store_id = $5,
                 payment_method_id = $6, payment_method_name = $7,
-                delivery_address = $8, discount_type = $9, discount_value = $10,
+                delivery_address = $8, discount_type = $9, discount_value = $10, client_site_id = $11,
                 confirmed_at = case when $3 = 'order' then now() end,
                 updated_at = now()
           where id = $1`,
@@ -319,6 +330,7 @@ export function ordersRouter(ctx: AppContext) {
           body.delivery_address,
           body.discount_type,
           body.discount_value,
+          body.client_site_id,
         ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));

@@ -231,6 +231,7 @@ export function OrderDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Endereço de entrega</CardTitle>
+                {order.client_site_name && <span className="text-sm text-muted-foreground">Obra: {order.client_site_name}</span>}
               </CardHeader>
               <CardContent>
                 <p className="text-sm leading-relaxed whitespace-pre-line">{order.delivery_address}</p>

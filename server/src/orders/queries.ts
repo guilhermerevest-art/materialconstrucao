@@ -31,6 +31,9 @@ export type OrderDetail = {
   total_amount: number;
   notes: string | null;
   delivery_address: string | null;
+  /** Obra do cliente escolhida no PDV. */
+  client_site_id: number | null;
+  client_site_name: string | null;
   payment_method_id: number | null;
   /** Nome da forma de pagamento quando o pedido foi salvo. */
   payment_method_name: string | null;
@@ -87,7 +90,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
   const { rows } = await db.query<OrderPdfRow>(
     `select o.id, o.user_id, o.store_id, o.client_id, o.status,
             o.subtotal_amount, o.discount_type, o.discount_value, o.discount_amount, o.total_amount,
-            o.notes, o.delivery_address,
+            o.notes, o.delivery_address, o.client_site_id, cs.name as client_site_name,
             o.payment_method_id, o.payment_method_name, o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
             o.cancelled_from, o.cancelled_at, cu.name as cancelled_by_name, o.cancel_reason,
             c.name as client_name, c.whatsapp as client_whatsapp,
@@ -99,6 +102,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
        join stores s on s.id = o.store_id
        join users u on u.id = o.user_id
        left join users cu on cu.id = o.cancelled_by
+       left join client_sites cs on cs.id = o.client_site_id
       where o.id = $1`,
     [id],
   );
