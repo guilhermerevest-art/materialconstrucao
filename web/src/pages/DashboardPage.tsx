@@ -185,7 +185,7 @@ export function DashboardPage() {
                   <TD className="font-medium">{order.client_name}</TD>
                   {isAdmin && <TD className="text-muted-foreground">{order.store_name}</TD>}
                   <TD>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} cancelledFrom={order.cancelled_from} />
                   </TD>
                   <TD className="text-right font-semibold tabular-nums">{formatMoney(order.total_amount)}</TD>
                   <TD className="pr-5">

@@ -38,6 +38,11 @@ export type OrderDetail = {
   sent_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  /** Cancelado: o que era antes (orçamento perdido ou pedido cancelado), quando, quem e por quê. */
+  cancelled_from: 'quote' | 'order' | null;
+  cancelled_at: Date | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
   client_name: string;
   client_whatsapp: string;
   store_name: string;
@@ -84,6 +89,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
             o.subtotal_amount, o.discount_type, o.discount_value, o.discount_amount, o.total_amount,
             o.notes, o.delivery_address,
             o.payment_method_id, o.payment_method_name, o.confirmed_at, o.sent_at, o.created_at, o.updated_at,
+            o.cancelled_from, o.cancelled_at, cu.name as cancelled_by_name, o.cancel_reason,
             c.name as client_name, c.whatsapp as client_whatsapp,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,
@@ -92,6 +98,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
        join clients c on c.id = o.client_id
        join stores s on s.id = o.store_id
        join users u on u.id = o.user_id
+       left join users cu on cu.id = o.cancelled_by
       where o.id = $1`,
     [id],
   );

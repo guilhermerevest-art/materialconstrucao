@@ -54,13 +54,17 @@ export type PaymentMethod = {
   created_at: string;
 };
 
-export type OrderStatus = 'quote' | 'order';
+export type OrderStatus = 'quote' | 'order' | 'cancelled';
+
+/** O que o documento cancelado era: orçamento perdido ou pedido cancelado. */
+export type CancelledFrom = 'quote' | 'order' | null;
 
 export type DiscountType = 'percent' | 'amount';
 
 export type OrderSummary = {
   id: number;
   status: OrderStatus;
+  cancelled_from: CancelledFrom;
   total_amount: number;
   created_at: string;
   confirmed_at: string | null;
@@ -112,6 +116,10 @@ export type Order = {
   sent_at: string | null;
   created_at: string;
   updated_at: string;
+  cancelled_from: CancelledFrom;
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
   client_name: string;
   client_whatsapp: string;
   store_name: string;
@@ -265,7 +273,7 @@ export type Dashboard = {
   };
   recent: Pick<
     OrderSummary,
-    'id' | 'status' | 'total_amount' | 'created_at' | 'sent_at' | 'client_name' | 'store_name' | 'user_name'
+    'id' | 'status' | 'cancelled_from' | 'total_amount' | 'created_at' | 'sent_at' | 'client_name' | 'store_name' | 'user_name'
   >[];
   by_store: { id: number; name: string; orders_today: number; orders_today_amount: number; quotes_today: number }[];
 };

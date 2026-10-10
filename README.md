@@ -131,6 +131,11 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   o vendedor escolhe qual usar (ou volta e corrige o número). O índice único no banco garante a
   regra mesmo quando duas pessoas salvam ao mesmo tempo — a segunda recebe o aviso em vez de criar
   a duplicata.
+- **Cancelar:** orçamento pode ser marcado como **perdido** por quem atende, com o motivo, e reaberto se foi
+  engano. **Pedido confirmado só o admin cancela**, também com motivo, e não volta. O cancelado continua no
+  sistema (aba Cancelados), sai do monitor, das vendas do painel e dos relatórios, não é editado nem enviado
+  por WhatsApp. Pedido com NF-e autorizada ou em processamento só é cancelado depois de cancelar a nota.
+  Excluir (só admin) continua apagando de vez.
 - Produto usado em pedidos não pode ser excluído; desative-o para tirá-lo da busca.
 - **Forma de pagamento** (opcional) é escolhida no orçamento ou pedido e sai no PDF. O administrador
   cadastra as formas em Administração → Formas de pagamento; toda lojamestre começa com Dinheiro, PIX,

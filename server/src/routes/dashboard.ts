@@ -33,7 +33,7 @@ export function dashboardRouter(ctx: AppContext) {
       );
 
       const recent = await db.query(
-        `select o.id, o.status, o.total_amount, o.created_at, o.sent_at,
+        `select o.id, o.status, o.cancelled_from, o.total_amount, o.created_at, o.sent_at,
                 c.name as client_name, s.name as store_name, u.name as user_name
            from orders o
            join clients c on c.id = o.client_id

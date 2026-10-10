@@ -21,6 +21,7 @@ const STATUS_TABS = [
   { value: '', label: 'Todos' },
   { value: 'quote', label: 'Orçamentos' },
   { value: 'order', label: 'Pedidos' },
+  { value: 'cancelled', label: 'Cancelados' },
 ];
 
 export function OrdersPage() {
@@ -243,7 +244,7 @@ export function OrdersPage() {
                     <TD className="text-muted-foreground">{order.user_name}</TD>
                     <TD>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <StatusBadge status={order.status} />
+                        <StatusBadge status={order.status} cancelledFrom={order.cancelled_from} />
                         {order.stage_name && <span className="text-[13px] text-muted-foreground">{order.stage_name}</span>}
                       </div>
                     </TD>

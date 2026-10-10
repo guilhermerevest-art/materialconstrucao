@@ -17,8 +17,8 @@ import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+import { cancelOrder, onOrderConfirmed, reopenQuote } from '../orders/lifecycle.js';
 import {
-  enterWorkflow,
   loadOrderWorkflow,
   moveOrderStage,
   renderStageMessage,
@@ -73,13 +73,17 @@ const dateParam = z.preprocess(
 );
 
 const listSchema = z.object({
-  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order']).optional()),
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['quote', 'order', 'cancelled']).optional()),
   from: dateParam,
   to: dateParam,
   q: optionalQuery,
   store_id: optionalQueryId,
   mine: z.enum(['true', 'false']).optional(),
   ...pagination,
+});
+
+const cancelSchema = z.object({
+  reason: z.string('Informe o motivo.').trim().min(3, 'Informe o motivo.').max(300, 'Use no máximo 300 caracteres.'),
 });
 
 const moveSchema = z.object({
@@ -203,7 +207,7 @@ export function ordersRouter(ctx: AppContext) {
     const offset = param((query.page - 1) * query.page_size);
     const items = await withSession(pool, user, async (db) => {
       const { rows } = await db.query(
-        `select o.id, o.status, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
+        `select o.id, o.status, o.cancelled_from, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
                 o.store_id, s.name as store_name, o.user_id, u.name as user_name,
                 o.client_id, c.name as client_name, o.stage_id, ws.name as stage_name,
                 count(*) over () as total_count
@@ -266,7 +270,7 @@ export function ordersRouter(ctx: AppContext) {
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
-      if (body.status === 'order') await enterWorkflow(db, id, user.id);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user);
       return loadOrderView(db, id, user);
     });
     res.status(201).json({ order });
@@ -285,6 +289,7 @@ export function ordersRouter(ctx: AppContext) {
       const current = rows[0];
       if (!current) throw new HttpError(404, NOT_FOUND);
       if (current.status === 'order') throw new HttpError(409, 'Pedidos confirmados não podem ser editados.');
+      if (current.status === 'cancelled') throw new HttpError(409, 'Documentos cancelados não podem ser editados.');
 
       const storeId = user.role === 'admin' && body.store_id ? body.store_id : current.store_id;
       if (storeId !== current.store_id) await assertExists(db, 'stores', storeId, 'Loja não encontrada.');
@@ -317,7 +322,7 @@ export function ordersRouter(ctx: AppContext) {
         ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
-      if (body.status === 'order') await enterWorkflow(db, id, user.id);
+      if (body.status === 'order') await onOrderConfirmed(db, id, user);
       return loadOrderView(db, id, user);
     });
     res.json({ order });
@@ -333,11 +338,36 @@ export function ordersRouter(ctx: AppContext) {
         [id],
       );
       if (!rowCount) {
-        const exists = await db.query('select 1 from orders where id = $1', [id]);
-        if (!exists.rowCount) throw new HttpError(404, NOT_FOUND);
-        throw new HttpError(409, 'Este documento já é um pedido.');
+        const { rows } = await db.query<{ status: string }>('select status from orders where id = $1', [id]);
+        if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+        throw new HttpError(
+          409,
+          rows[0].status === 'cancelled' ? 'Orçamento perdido não pode ser convertido. Reabra-o antes.' : 'Este documento já é um pedido.',
+        );
       }
-      await enterWorkflow(db, id, user.id);
+      await onOrderConfirmed(db, id, user);
+      return loadOrderView(db, id, user);
+    });
+    res.json({ order });
+  });
+
+  /** Cancela o pedido (só admin) ou marca o orçamento como perdido, com o motivo. */
+  router.post('/:id/cancel', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const { reason } = cancelSchema.parse(req.body);
+    const order = await withSession(pool, user, async (db) => {
+      await cancelOrder(db, id, user, reason);
+      return loadOrderView(db, id, user);
+    });
+    res.json({ order });
+  });
+
+  router.post('/:id/reopen', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const order = await withSession(pool, user, async (db) => {
+      await reopenQuote(db, id);
       return loadOrderView(db, id, user);
     });
     res.json({ order });
@@ -383,6 +413,7 @@ export function ordersRouter(ctx: AppContext) {
     const id = parseId(req.params.id, NOT_FOUND);
     const order = await withSession(pool, user, (db) => loadOrderDetail(db, id));
     if (!order) throw new HttpError(404, NOT_FOUND);
+    if (order.status === 'cancelled') throw new HttpError(409, 'Documento cancelado não é enviado ao cliente.');
 
     const settings = await withSession(pool, user, (db) => loadEvolutionSettings(db, user.tenant_id));
     if (!settings) {

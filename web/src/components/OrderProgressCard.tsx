@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, CircleCheck, Timer, Undo2 } from 'lucide-react';
+import { ArrowRight, Ban, CircleCheck, Timer, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
@@ -50,13 +50,19 @@ export function OrderProgressCard({ order, workflow }: { order: Order; workflow:
 
   const minutes = elapsedMinutes(workflow.entered_at, now);
   const state = workflow.is_final ? 'ok' : slaState(minutes, workflow.sla_minutes);
+  const cancelled = order.status === 'cancelled';
   const events = [...workflow.events].reverse();
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Andamento</CardTitle>
-        {workflow.is_final ? (
+        {cancelled ? (
+          <Badge variant="danger">
+            <Ban className="size-3.5" aria-hidden />
+            Cancelado
+          </Badge>
+        ) : workflow.is_final ? (
           <Badge variant="success">
             <CircleCheck className="size-3.5" aria-hidden />
             Concluído
@@ -73,8 +79,9 @@ export function OrderProgressCard({ order, workflow }: { order: Order; workflow:
       </CardHeader>
       <CardContent className="grid gap-4">
         <div>
+          {cancelled && <p className="text-sm text-muted-foreground">Parou em</p>}
           <p className="text-lg leading-tight font-semibold">{workflow.stage_name}</p>
-          {workflow.sector_name && !workflow.is_final && (
+          {workflow.sector_name && !workflow.is_final && !cancelled && (
             <p className="text-sm text-muted-foreground">Setor {workflow.sector_name}</p>
           )}
         </div>
@@ -123,7 +130,8 @@ export function OrderProgressCard({ order, workflow }: { order: Order; workflow:
             )}
           </div>
         ) : (
-          !workflow.is_final && (
+          !workflow.is_final &&
+          !cancelled && (
             <p className="text-[13px] text-muted-foreground">
               Quem é do setor {workflow.sector_name} avança este pedido.
             </p>

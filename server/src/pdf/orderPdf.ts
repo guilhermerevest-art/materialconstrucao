@@ -48,7 +48,7 @@ export function orderFileName(order: Pick<OrderPdfDetail, 'id' | 'status'>) {
 
 export function renderOrderPdf(order: OrderPdfDetail, timeZone: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const label = documentLabel(order.status);
+    const label = documentLabel(order.status, order.cancelled_from);
     const doc = new PDFDocument({
       size: 'A4',
       margin: MARGIN,
@@ -119,7 +119,7 @@ function drawHeader(doc: Doc, order: OrderPdfDetail, timeZone: string): number {
   if (order.store_phone) doc.text(`Telefone: ${pdfSafe(order.store_phone)}`, textLeft, doc.y + 1, { width: textWidth });
   const storeBottom = hasLogo ? Math.max(doc.y, MARGIN + LOGO_BOX) : doc.y;
 
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(ACCENT).text(documentLabel(order.status), docX, MARGIN, {
+  doc.font('Helvetica-Bold').fontSize(18).fillColor(ACCENT).text(documentLabel(order.status, order.cancelled_from), docX, MARGIN, {
     width: docWidth,
     align: 'right',
   });
@@ -220,7 +220,7 @@ function drawItems(doc: Doc, order: OrderDetail, startY: number): number {
         .font('Helvetica')
         .fontSize(9)
         .fillColor(MUTED)
-        .text(`${documentLabel(order.status)} nº ${formatOrderNumber(order.id)} (continuação)`, MARGIN, MARGIN, {
+        .text(`${documentLabel(order.status, order.cancelled_from)} nº ${formatOrderNumber(order.id)} (continuação)`, MARGIN, MARGIN, {
           width: tableWidth,
         });
       y = drawTableHeader(doc, doc.y + 6);

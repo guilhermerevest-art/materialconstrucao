@@ -91,7 +91,8 @@ export function monitorRouter(ctx: AppContext) {
            join stores s on s.id = o.store_id
            join clients c on c.id = o.client_id
            join users u on u.id = o.user_id
-          where ($1::bigint is null or ws.sector_id = $1)
+          where o.status = 'order'
+            and ($1::bigint is null or ws.sector_id = $1)
             and ($2::bigint is null or o.store_id = $2)
           order by o.stage_entered_at, o.id
           limit ${MAX_ORDERS}`,

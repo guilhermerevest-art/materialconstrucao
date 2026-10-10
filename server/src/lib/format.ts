@@ -14,8 +14,12 @@ export function formatDateTime(value: Date, timeZone: string) {
   return `${date} às ${time}`;
 }
 
-export type OrderStatus = 'quote' | 'order';
+export type OrderStatus = 'quote' | 'order' | 'cancelled';
 
 export const formatOrderNumber = (id: number) => String(id).padStart(6, '0');
 
-export const documentLabel = (status: OrderStatus) => (status === 'quote' ? 'Orçamento' : 'Pedido');
+/** "Orçamento", "Pedido", "Orçamento perdido" ou "Pedido cancelado". */
+export function documentLabel(status: OrderStatus, cancelledFrom: 'quote' | 'order' | null = null) {
+  if (status === 'cancelled') return cancelledFrom === 'quote' ? 'Orçamento perdido' : 'Pedido cancelado';
+  return status === 'quote' ? 'Orçamento' : 'Pedido';
+}

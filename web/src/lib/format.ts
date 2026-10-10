@@ -1,4 +1,4 @@
-import type { DiscountType, OrderStatus } from './types';
+import type { CancelledFrom, DiscountType, OrderStatus } from './types';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const quantity = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
@@ -14,7 +14,11 @@ export const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 export const formatDateTime = (iso: string) => `${dateFormat.format(new Date(iso))} ${timeFormat.format(new Date(iso))}`;
 
 export const formatOrderNumber = (id: number) => String(id).padStart(6, '0');
-export const documentLabel = (status: OrderStatus) => (status === 'quote' ? 'Orçamento' : 'Pedido');
+/** "Orçamento", "Pedido", "Orçamento perdido" ou "Pedido cancelado". */
+export function documentLabel(status: OrderStatus, cancelledFrom: CancelledFrom = null) {
+  if (status === 'cancelled') return cancelledFrom === 'quote' ? 'Orçamento perdido' : 'Pedido cancelado';
+  return status === 'quote' ? 'Orçamento' : 'Pedido';
+}
 
 /** WhatsApp guardado só com dígitos ("5511987654321") no formato "+55 (11) 98765-4321". */
 export function formatWhatsapp(digits: string) {

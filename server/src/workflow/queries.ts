@@ -77,6 +77,7 @@ export async function enterWorkflow(db: pg.PoolClient, orderId: number, userId: 
 }
 
 type CurrentStageRow = {
+  order_status: 'quote' | 'order' | 'cancelled';
   stage_id: number;
   stage_name: string;
   sector_id: number | null;
@@ -92,7 +93,7 @@ type CurrentStageRow = {
 /** Etapa atual com a próxima e a anterior do mesmo fluxo. Roda dentro de withSession. */
 async function loadCurrentStage(db: pg.PoolClient, orderId: number, lock = false): Promise<CurrentStageRow | null> {
   const { rows } = await db.query<CurrentStageRow>(
-    `select ws.id as stage_id, ws.name as stage_name, ws.sector_id, s.name as sector_name, ws.sla_minutes,
+    `select o.status as order_status, ws.id as stage_id, ws.name as stage_name, ws.sector_id, s.name as sector_name, ws.sla_minutes,
             o.stage_entered_at as entered_at,
             nx.id as next_id, nx.name as next_name, pv.id as previous_id, pv.name as previous_name
        from orders o
@@ -121,6 +122,8 @@ export async function loadOrderWorkflow(db: pg.PoolClient, orderId: number, user
   const current = await loadCurrentStage(db, orderId);
   if (!current) return null;
   const sectors = await userSectorIds(db, user.id);
+  // Pedido cancelado guarda a etapa onde parou, mas não anda mais.
+  const cancelled = current.order_status === 'cancelled';
   const { rows: events } = await db.query<StageEvent>(
     `select e.id, e.from_stage_name, e.to_stage_name, u.name as user_name, e.note, e.created_at
        from order_stage_events e
@@ -137,9 +140,9 @@ export async function loadOrderWorkflow(db: pg.PoolClient, orderId: number, user
     sla_minutes: current.sla_minutes,
     entered_at: current.entered_at,
     is_final: current.next_id === null,
-    next_stage: ref(current.next_id, current.next_name),
-    previous_stage: ref(current.previous_id, current.previous_name),
-    can_move: canMoveFrom(user, current.sector_id, sectors),
+    next_stage: cancelled ? null : ref(current.next_id, current.next_name),
+    previous_stage: cancelled ? null : ref(current.previous_id, current.previous_name),
+    can_move: !cancelled && canMoveFrom(user, current.sector_id, sectors),
     events,
   };
 }
@@ -171,6 +174,7 @@ export async function moveOrderStage(
     if (!exists.rowCount) throw new HttpError(404, 'Pedido não encontrado.');
     throw new HttpError(409, 'Este pedido não passa por etapas.');
   }
+  if (current.order_status === 'cancelled') throw new HttpError(409, 'Pedido cancelado não muda de etapa.');
   if (current.stage_id !== input.expected_stage_id) {
     throw new HttpError(
       409,

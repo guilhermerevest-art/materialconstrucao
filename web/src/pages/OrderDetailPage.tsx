@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCheck, CheckCircle2, Download, FileCheck2, Pencil, Trash2, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Ban, CheckCheck, CheckCircle2, Download, FileCheck2, Pencil, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { CancelOrderDialog } from '@/components/CancelOrderDialog';
 import { OrderProgressCard } from '@/components/OrderProgressCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,7 @@ export function OrderDetailPage() {
   const queryClient = useQueryClient();
   const justSaved = Boolean((location.state as { justSaved?: boolean } | null)?.justSaved);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<'convert' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<'convert' | 'delete' | 'cancel' | null>(null);
 
   const query = useQuery({
     queryKey: ['order', id],
@@ -40,7 +41,7 @@ export function OrderDetailPage() {
     enabled: Number.isInteger(id) && id > 0,
   });
   const order = query.data;
-  useDocumentTitle(order ? `${documentLabel(order.status)} ${formatOrderNumber(order.id)}` : 'Pedido');
+  useDocumentTitle(order ? `${documentLabel(order.status, order.cancelled_from)} ${formatOrderNumber(order.id)}` : 'Pedido');
 
   const refresh = (next: Order) => {
     queryClient.setQueryData(['order', id], next);
@@ -66,6 +67,15 @@ export function OrderDetailPage() {
       toast.success(`Orçamento convertido no pedido nº ${formatOrderNumber(next.id)}.`);
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Não foi possível converter.'),
+  });
+
+  const reopen = useMutation({
+    mutationFn: () => api<{ order: Order }>(`/orders/${id}/reopen`, { method: 'POST' }),
+    onSuccess: ({ order: next }) => {
+      refresh(next);
+      toast.success('Orçamento reaberto.');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Não foi possível reabrir.'),
   });
 
   const remove = useMutation({
@@ -95,9 +105,11 @@ export function OrderDetailPage() {
     );
   }
 
-  const label = documentLabel(order.status);
+  const label = documentLabel(order.status, order.cancelled_from);
   const number = formatOrderNumber(order.id);
   const isQuote = order.status === 'quote';
+  const isCancelled = order.status === 'cancelled';
+  const canCancel = isQuote || (order.status === 'order' && user.role === 'admin');
   const pdfUrl = `/api/orders/${order.id}/pdf?download=1`;
 
   return (
@@ -116,11 +128,11 @@ export function OrderDetailPage() {
             <h1 className="text-2xl font-bold tracking-tight">
               {label} nº {number}
             </h1>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} cancelledFrom={order.cancelled_from} />
           </div>
           <p className="text-sm text-muted-foreground">
             Criado em {formatDateTime(order.created_at)} por {order.user_name}, {order.store_name}
-            {order.confirmed_at && !isQuote && <>. Confirmado em {formatDateTime(order.confirmed_at)}</>}
+            {order.confirmed_at && order.status === 'order' && <>. Confirmado em {formatDateTime(order.confirmed_at)}</>}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -138,6 +150,18 @@ export function OrderDetailPage() {
               </Button>
             </>
           )}
+          {canCancel && (
+            <Button variant="outline" onClick={() => setConfirm('cancel')}>
+              <Ban />
+              {isQuote ? 'Marcar como perdido' : 'Cancelar pedido'}
+            </Button>
+          )}
+          {isCancelled && order.cancelled_from === 'quote' && (
+            <Button variant="outline" loading={reopen.isPending} onClick={() => reopen.mutate()}>
+              <RotateCcw />
+              Reabrir orçamento
+            </Button>
+          )}
           {user.role === 'admin' && (
             <Button variant="destructive-ghost" onClick={() => setConfirm('delete')}>
               <Trash2 />
@@ -146,6 +170,17 @@ export function OrderDetailPage() {
           )}
         </div>
       </div>
+
+      {isCancelled && (
+        <Alert
+          variant="danger"
+          icon={<Ban />}
+          title={`${label} em ${formatDateTime(order.cancelled_at!)} por ${order.cancelled_by_name}.`}
+          className="mb-6"
+        >
+          <p>Motivo: {order.cancel_reason}</p>
+        </Alert>
+      )}
 
       {justSaved && !order.sent_at && !sendError && (
         <Alert variant="success" icon={<CheckCircle2 />} title={`${label} salvo.`} className="mb-6">
@@ -248,6 +283,7 @@ export function OrderDetailPage() {
                 size="lg"
                 className="w-full"
                 loading={send.isPending}
+                disabled={isCancelled}
                 onClick={() => send.mutate()}
               >
                 {!send.isPending && <WhatsAppIcon />}
@@ -298,6 +334,12 @@ export function OrderDetailPage() {
         confirmLabel="Converter em pedido"
         loading={convert.isPending}
         onConfirm={() => convert.mutate()}
+      />
+      <CancelOrderDialog
+        order={order}
+        open={confirm === 'cancel'}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        onCancelled={refresh}
       />
       <ConfirmDialog
         open={confirm === 'delete'}
