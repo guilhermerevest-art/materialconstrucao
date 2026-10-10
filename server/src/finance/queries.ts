@@ -49,10 +49,13 @@ type OrderCredit = {
 
 /** O que o cliente deve: em aberto, vencido e a parcela vencida mais antiga, em todas as lojas. */
 export async function loadClientCredit(db: pg.PoolClient, clientId: number, timeZone: string) {
-  const { rows } = await db.query<{ open_balance: number; overdue_amount: number; oldest_overdue: string | null }>(
+  const { rows } = await db.query<{ open_balance: number; overdue_amount: number; oldest_overdue: string | null; fiado_balance: number }>(
     `select coalesce(sum(amount - paid_amount), 0) as open_balance,
             coalesce(sum(amount - paid_amount) filter (where due_date < (now() at time zone $2)::date), 0) as overdue_amount,
-            min(due_date) filter (where due_date < (now() at time zone $2)::date) as oldest_overdue
+            min(due_date) filter (where due_date < (now() at time zone $2)::date) as oldest_overdue,
+            -- O limite vale para crediário e fiado juntos.
+            greatest(0, (select coalesce(sum(f.amount), 0) from fiado_entries f where f.client_id = $1 and f.cancelled_at is null))
+              as fiado_balance
        from receivables
       where client_id = $1 and status = 'open'`,
     [clientId, timeZone],
@@ -90,11 +93,12 @@ export async function assertStoreCredit(db: pg.PoolClient, orderId: number, time
       'CREDIT_OVERDUE',
     );
   }
-  const available = Math.round((order.credit_limit - credit.open_balance) * 100) / 100;
+  const debt = credit.open_balance + credit.fiado_balance;
+  const available = Math.round((order.credit_limit - debt) * 100) / 100;
   if (order.total_amount > available + 0.005) {
     throw new HttpError(
       409,
-      `O pedido de ${formatMoney(order.total_amount)} passa do crédito de ${order.client_name}: limite ${formatMoney(order.credit_limit)}, em aberto ${formatMoney(credit.open_balance)}, disponível ${formatMoney(Math.max(0, available))}.`,
+      `O pedido de ${formatMoney(order.total_amount)} passa do crédito de ${order.client_name}: limite ${formatMoney(order.credit_limit)}, em aberto ${formatMoney(debt)}, disponível ${formatMoney(Math.max(0, available))}.`,
       'CREDIT_LIMIT',
     );
   }
@@ -127,7 +131,8 @@ export async function createOrderReceivables(db: pg.PoolClient, orderId: number,
     [orderId],
   );
   const order = rows[0];
-  if (!order || order.total_amount <= 0) return;
+  // Fiado tem a conta própria (caderneta), não vira parcela.
+  if (!order || order.total_amount <= 0 || order.kind === 'fiado') return;
   const count = order.installments ?? 1;
   const first = order.first_due_days ?? 0;
   const interval = order.interval_days ?? 30;
@@ -210,10 +215,15 @@ export async function lockOpenSession(db: pg.PoolClient, userId: number) {
 
 /** Totais do caixa: por forma de pagamento, sangrias, suprimentos e o dinheiro que deve estar na gaveta. */
 export async function sessionSummary(db: pg.PoolClient, session: CashSession) {
+  // Parcelas e fiado recebidos neste caixa.
   const methods = await db.query<{ method_name: string; kind: string; amount: number; count: number }>(
-    `select method_name, kind, sum(amount) as amount, count(*) as count
-       from receivable_payments
-      where cash_session_id = $1 and reversed_at is null
+    `select method_name, kind, sum(amount) as amount, count(*)::int as count
+       from (
+         select method_name, kind, amount from receivable_payments where cash_session_id = $1 and reversed_at is null
+         union all
+         select payment_method_name, payment_kind, -amount from fiado_entries
+          where cash_session_id = $1 and kind = 'payment' and cancelled_at is null
+       ) p
       group by method_name, kind
       order by sum(amount) desc`,
     [session.id],

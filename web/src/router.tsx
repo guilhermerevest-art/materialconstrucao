@@ -6,6 +6,8 @@ import { CashPage } from './pages/CashPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { ConferencePage } from './pages/ConferencePage';
 import { DashboardPage } from './pages/DashboardPage';
+import { FiadoAccountPage } from './pages/FiadoAccountPage';
+import { FiadoPage } from './pages/FiadoPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
 import { DeliveryProofPage } from './pages/DeliveryProofPage';
 import { FiscalDocumentsPage } from './pages/fiscal/FiscalDocumentsPage';
@@ -107,6 +109,8 @@ export const router = createBrowserRouter([
       { path: 'entregas/:id', element: <DeliveryProofPage /> },
       { path: 'caixa', element: <CashPage /> },
       { path: 'contas-a-receber', element: <ReceivablesPage /> },
+      { path: 'fiado', element: <FiadoPage /> },
+      { path: 'fiado/:clientId', element: <FiadoAccountPage /> },
       { path: 'fiscal', element: <FiscalDocumentsPage /> },
       {
         element: <RequireAdmin />,

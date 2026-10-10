@@ -5,6 +5,7 @@ import { Link, useBlocker, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { ClientSitesDialog, siteDeliveryAddress, useClientSites } from '@/components/ClientSitesDialog';
 import { CartTable, type CartItem } from '@/components/pdv/CartTable';
+import { FiadoPdvHint } from '@/components/fiado/FiadoPdvHint';
 import { ClientPicker, type ClientPickerHandle } from '@/components/pdv/ClientPicker';
 import { DiscountApprovalDialog, type DiscountApprovalRequest } from '@/components/pdv/DiscountApprovalDialog';
 import { ProductSearch, type ProductSearchHandle } from '@/components/pdv/ProductSearch';
@@ -215,6 +216,9 @@ export function OrderEditorPage() {
       setApproval(null);
       queryClient.setQueryData(['order', order.id], order);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+      // Venda no fiado ou no crediário mexe na conta do cliente.
+      queryClient.invalidateQueries({ queryKey: ['fiado'] });
+      queryClient.invalidateQueries({ queryKey: ['client-credit'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       // A tela de detalhe confirma o salvamento e oferece o envio por WhatsApp.
       navigate(`/pedidos/${order.id}`, { state: { justSaved: true } });
@@ -483,6 +487,9 @@ export function OrderEditorPage() {
                     </option>
                   ))}
                 </NativeSelect>
+                {client && user.fiado_enabled && paymentOptions.find((m) => m.id === paymentMethodId)?.kind === 'fiado' && (
+                  <FiadoPdvHint clientId={client.id} totalCents={totalCents} />
+                )}
               </Field>
 
               <Field

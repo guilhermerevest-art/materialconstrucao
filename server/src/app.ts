@@ -15,6 +15,7 @@ import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { deliveriesRouter } from './routes/deliveries.js';
 import { financeRouter } from './routes/finance.js';
+import { fiadoRouter } from './routes/fiado.js';
 import { followupsRouter } from './routes/followups.js';
 import { pricingRouter } from './routes/pricing.js';
 import { monitorRouter } from './routes/monitor.js';
@@ -75,6 +76,7 @@ export function createApp(ctx: AppContext) {
   api.use(financeRouter(ctx));
   api.use(followupsRouter(ctx));
   api.use(pricingRouter(ctx));
+  api.use(fiadoRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/fiscal', fiscalRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));

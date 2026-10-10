@@ -104,14 +104,23 @@ async function assertFinanceEnabled(db: pg.PoolClient) {
 }
 
 async function sessionView(db: pg.PoolClient, session: CashSession) {
+  // Parcelas e fiado (source diz qual estorno chamar).
   const payments = await db.query(
-    `select p.id, p.receivable_id, p.method_name, p.kind, p.amount, p.received_at, p.reversed_at, p.reverse_reason,
-            r.order_id, r.installment, r.installments, c.name as client_name
-       from receivable_payments p
-       join receivables r on r.id = p.receivable_id
-       join clients c on c.id = r.client_id
-      where p.cash_session_id = $1
-      order by p.received_at desc, p.id desc`,
+    `select * from (
+       select 'receivable' as source, p.id, p.receivable_id, p.method_name, p.kind, p.amount, p.received_at, p.reversed_at,
+              p.reverse_reason, r.order_id, r.installment, r.installments, c.name as client_name
+         from receivable_payments p
+         join receivables r on r.id = p.receivable_id
+         join clients c on c.id = r.client_id
+        where p.cash_session_id = $1
+       union all
+       select 'fiado', f.id, null, f.payment_method_name, f.payment_kind, -f.amount, f.created_at, f.cancelled_at,
+              f.cancel_reason, null, null, null, c.name
+         from fiado_entries f
+         join clients c on c.id = f.client_id
+        where f.cash_session_id = $1 and f.kind = 'payment'
+     ) p
+     order by received_at desc, id desc`,
     [session.id],
   );
   const movements = await db.query(
@@ -394,7 +403,7 @@ export function financeRouter(ctx: AppContext) {
       return {
         credit_limit: limit,
         ...credit,
-        available: limit === null ? null : Math.max(0, Math.round((limit - credit.open_balance) * 100) / 100),
+        available: limit === null ? null : Math.max(0, Math.round((limit - credit.open_balance - credit.fiado_balance) * 100) / 100),
       };
     });
     res.json({ credit: data });

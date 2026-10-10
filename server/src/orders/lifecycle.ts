@@ -2,6 +2,7 @@ import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { cancelOrderDeliveries } from '../deliveries/queries.js';
+import { assertFiadoPurchase, cancelFiadoPurchase, createFiadoPurchase } from '../fiado/queries.js';
 import { assertStoreCredit, cancelOrderReceivables, createOrderReceivables, loadFinanceSettings } from '../finance/queries.js';
 import { applyOrderStock, returnOrderStock } from '../stock/queries.js';
 import { enterWorkflow } from '../workflow/queries.js';
@@ -14,6 +15,8 @@ export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user:
   // Financeiro desligado (padrão): nada de parcela nem trava de crediário, como no MVP.
   const finance = await loadFinanceSettings(db);
   if (finance.enabled) await assertStoreCredit(db, orderId, timeZone);
+  // Fiado (caderneta): módulo próprio, confere limite e atraso antes de vender.
+  await assertFiadoPurchase(db, orderId, timeZone);
   // Custo de cada item na hora da venda, para margem e lucro nos relatórios.
   await db.query(
     `update order_items oi set unit_cost = p.cost_price
@@ -26,6 +29,7 @@ export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user:
   // Daqui em diante o pedido tem saldo a entregar (retiradas e entregas parciais).
   await db.query('update orders set delivery_tracking = true where id = $1', [orderId]);
   if (finance.enabled) await createOrderReceivables(db, orderId, timeZone);
+  await createFiadoPurchase(db, orderId, timeZone);
 }
 
 type CancellableOrder = {
@@ -79,6 +83,7 @@ export async function cancelOrder(db: pg.PoolClient, orderId: number, user: Sess
 
   if (order.status === 'order') {
     await cancelOrderReceivables(db, orderId, `Pedido cancelado: ${reason}`);
+    await cancelFiadoPurchase(db, orderId, user, `Pedido cancelado: ${reason}`);
     await cancelOrderDeliveries(db, orderId, user, `Pedido cancelado: ${reason}`);
   }
   if (order.stock_applied) await returnOrderStock(db, orderId, user, `Pedido cancelado: ${reason}`);

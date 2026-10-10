@@ -264,6 +264,30 @@ Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
   (PSP) e não faz parte desta versão.
 - O vendedor vê as parcelas e caixas da própria loja; o admin, de todas.
 
+## Fiado (caderneta)
+
+Módulo próprio, desligado por padrão e independente do financeiro. O admin liga em Configurações → aba Fiado;
+aí aparece a forma de pagamento **Fiado** no PDV e o menu **Financeiro → Fiado**.
+
+- **Limite:** o mesmo limite de crédito do cliente (Clientes → Crédito) vale para fiado e crediário juntos.
+  Sem limite, o cliente não compra fiado. O PDV mostra quanto ele deve e o disponível ao escolher "Fiado".
+- **Compra fiada:** o pedido confirmado na forma Fiado soma na conta do cliente e vence no **dia de vencimento
+  do mês seguinte** (padrão da loja ou o do cliente; ex.: compras de outubro vencem dia 10 de novembro).
+  Cancelar o pedido tira a compra da conta; se ele já tinha pago, fica com crédito.
+- **Bloqueio:** com atraso além da tolerância (padrão: qualquer atraso), o cliente não compra mais fiado até
+  pagar.
+- **Receber:** parcial ou tudo, em qualquer forma (o troco do dinheiro é calculado). O pagamento abate sempre
+  as compras mais antigas. Com o financeiro ligado, o recebimento entra no caixa aberto do operador (e no
+  dinheiro esperado da gaveta); sem financeiro, fica só na conta.
+- **Encargos (opcionais):** multa (%) e juros ao mês (proporcionais aos dias) sobre o que atrasou, lançados junto
+  com o recebimento. Cada pagamento acerta o atraso até a data dele, então nada é cobrado duas vezes. O admin
+  pode dispensar.
+- **Estorno:** com caixa, pelo operador ou admin enquanto o caixa está aberto; sem caixa, só o admin. Os
+  encargos cobrados junto saem também.
+- **Extrato** com saldo depois de cada lançamento, em PDF, e **Cobrar**: manda pelo WhatsApp da loja a
+  mensagem (editável, com `{cliente}`, `{loja}`, `{saldo}`, `{vencido}`, `{vencimento}`) e o extrato.
+- **Ajuste** (admin): saldo da caderneta de papel, acerto ou dívida perdoada, sempre com motivo.
+
 ## Retomada de orçamentos
 
 Aba **A retomar** em Pedidos e o aviso na tela inicial ("2 orçamentos para retomar hoje"). Funciona sem

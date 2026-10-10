@@ -12,6 +12,8 @@ export type User = {
   finance_enabled?: boolean;
   /** Desconto máximo de quem vende, em %. Nulo = sem limite. */
   max_discount_percent?: number | null;
+  /** Fiado (caderneta) ligado na lojamestre. */
+  fiado_enabled?: boolean;
 };
 
 export type ManagedUser = User & {
@@ -195,7 +197,7 @@ export type StockEntry = {
   items_count: number;
 };
 
-export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'other';
+export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'fiado' | 'other';
 
 export type PaymentMethod = {
   id: number;
@@ -288,6 +290,7 @@ export type Order = {
   /** Desconto acima do limite: quem liberou e até quanto. */
   discount_approved_by_name?: string | null;
   discount_approved_percent?: number | null;
+  payment_method_kind?: PaymentKind | null;
   client_whatsapp: string;
   store_name: string;
   store_address: string | null;
@@ -685,6 +688,8 @@ export type Receivable = {
 };
 
 export type ReceivablePayment = {
+  /** No movimento do caixa: parcela do financeiro ou recebimento do fiado. */
+  source?: 'receivable' | 'fiado';
   id: number;
   receivable_id: number;
   method_name: string;
@@ -733,6 +738,8 @@ export type CashView = {
 export type ClientCredit = {
   credit_limit: number | null;
   open_balance: number;
+  /** Saldo do fiado (o limite vale para crediário e fiado juntos). */
+  fiado_balance?: number;
   overdue_amount: number;
   oldest_overdue: string | null;
   available: number | null;
@@ -851,3 +858,66 @@ export type PriceAdjustResult = {
 };
 
 export type SalesSettings = { max_discount_percent: number | null; default_markup_percent: number | null };
+
+export type FiadoSettings = {
+  enabled: boolean;
+  due_day: number;
+  block_days: number;
+  late_fee_percent: number;
+  interest_percent: number;
+  message: string | null;
+  default_message: string;
+};
+
+/** Cliente na lista do fiado. */
+export type FiadoAccountRow = {
+  client_id: number;
+  client_name: string;
+  client_whatsapp: string;
+  credit_limit: number | null;
+  balance: number;
+  overdue: number;
+  oldest_overdue: string | null;
+  next_due: string | null;
+  days_late: number;
+  last_payment_at: string | null;
+};
+
+export type FiadoEntryKind = 'purchase' | 'charge' | 'payment' | 'refund' | 'adjustment';
+
+export type FiadoEntry = {
+  id: number;
+  kind: FiadoEntryKind;
+  /** Com sinal: débito positivo, crédito negativo. */
+  amount: number;
+  due_date: string | null;
+  description: string | null;
+  order_id: number | null;
+  payment_method_name: string | null;
+  cash_session_id: number | null;
+  created_at: string;
+  user_name: string;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  /** Saldo depois do lançamento; nulo nos cancelados. */
+  balance_after: number | null;
+};
+
+export type FiadoAccount = {
+  client: { id: number; name: string; whatsapp: string; credit_limit: number | null; fiado_due_day: number | null };
+  account: {
+    balance: number;
+    overdue: number;
+    oldest_overdue: string | null;
+    days_late: number;
+    next_due: string | null;
+    next_due_amount: number;
+    charges: number;
+  };
+  due_day: number;
+  store_credit_open: number;
+  available: number | null;
+  blocked: boolean;
+  entries: FiadoEntry[];
+  message: string;
+};

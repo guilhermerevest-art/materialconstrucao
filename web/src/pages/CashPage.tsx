@@ -330,10 +330,14 @@ export function CashPage() {
 
   const reverse = useMutation({
     mutationFn: ({ payment, reason }: { payment: ReceivablePayment; reason: string }) =>
-      api(`/receivable-payments/${payment.id}/reverse`, { method: 'POST', body: { reason } }),
+      api(payment.source === 'fiado' ? `/fiado/entries/${payment.id}/reverse` : `/receivable-payments/${payment.id}/reverse`, {
+        method: 'POST',
+        body: { reason },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cash'] });
       queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['fiado'] });
       queryClient.invalidateQueries({ queryKey: ['order-receivables'] });
       setReversing(null);
       toast.success('Recebimento estornado. A parcela voltou a ficar em aberto.');
@@ -426,10 +430,11 @@ export function CashPage() {
               </CardHeader>
               <ul className="divide-y divide-border border-t border-border text-sm">
                 {view.payments.map((p) => (
-                  <li key={`p${p.id}`} className={cn('flex flex-wrap items-center gap-3 px-5 py-2.5', p.reversed_at && 'opacity-55')}>
+                  <li key={`${p.source ?? 'receivable'}${p.id}`} className={cn('flex flex-wrap items-center gap-3 px-5 py-2.5', p.reversed_at && 'opacity-55')}>
                     <span className="w-14 text-muted-foreground tabular-nums">{formatDateTime(p.received_at).slice(-5)}</span>
                     <span className="min-w-0 flex-1">
                       {p.client_name}
+                      {p.source === 'fiado' && <span className="ml-2 text-muted-foreground">fiado</span>}
                       {p.order_id && (
                         <Link to={`/pedidos/${p.order_id}`} className="ml-2 text-muted-foreground hover:underline">
                           pedido {formatOrderNumber(p.order_id)}

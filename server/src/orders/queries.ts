@@ -66,6 +66,8 @@ export type OrderDetail = {
   /** Desconto acima do limite do vendedor: quem liberou e até quanto. */
   discount_approved_by_name: string | null;
   discount_approved_percent: number | null;
+  /** Tipo da forma de pagamento (dinheiro, crediário, fiado...). */
+  payment_method_kind: string | null;
   store_name: string;
   store_address: string | null;
   store_phone: string | null;
@@ -114,6 +116,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
             c.name as client_name, c.whatsapp as client_whatsapp,
             c.contact_name as client_contact_name, c.person_type as client_person_type,
             o.price_list_name, o.discount_approved_percent, da.name as discount_approved_by_name,
+            pmk.kind as payment_method_kind,
             s.name as store_name, s.address as store_address, s.phone as store_phone,
             s.logo_data, s.logo_mime,
             u.name as user_name
@@ -123,6 +126,7 @@ export async function loadOrderDetail(db: pg.PoolClient, id: number): Promise<Or
        join users u on u.id = o.user_id
        left join users cu on cu.id = o.cancelled_by
        left join users da on da.id = o.discount_approved_by
+       left join payment_methods pmk on pmk.id = o.payment_method_id
        left join client_sites cs on cs.id = o.client_site_id
       where o.id = $1`,
     [id],

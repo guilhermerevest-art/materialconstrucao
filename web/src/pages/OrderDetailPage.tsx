@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { CancelOrderDialog } from '@/components/CancelOrderDialog';
+import { FiadoOrderCard } from '@/components/fiado/FiadoOrderCard';
 import { FollowupCard } from '@/components/FollowupCard';
 import { OrderDeliveriesCard } from '@/components/OrderDeliveriesCard';
 import { OrderPaymentsCard } from '@/components/OrderPaymentsCard';
@@ -294,6 +295,7 @@ export function OrderDetailPage() {
           <PriceTag cents={Math.round(order.total_amount * 100)} />
 
           {order.status !== 'quote' && user.finance_enabled && <OrderPaymentsCard order={order} />}
+          {order.status !== 'quote' && user.fiado_enabled && order.payment_method_kind === 'fiado' && <FiadoOrderCard order={order} />}
 
           {order.workflow && <OrderProgressCard order={order} workflow={order.workflow} />}
 

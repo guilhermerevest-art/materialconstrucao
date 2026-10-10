@@ -109,39 +109,49 @@ function PaymentMethodFormDialog({
                 ))}
               </NativeSelect>
             </Field>
-            <Field label="Parcelas" htmlFor="forma-parcelas">
-              <Input
-                id="forma-parcelas"
-                inputMode="numeric"
-                value={installments}
-                onChange={(e) => setInstallments(e.target.value.replace(/\D/g, ''))}
-                maxLength={2}
-              />
-            </Field>
-            <Field label="1º vencimento (dias)" htmlFor="forma-primeiro" hint="0 = no dia da venda (à vista).">
-              <Input
-                id="forma-primeiro"
-                inputMode="numeric"
-                value={firstDue}
-                onChange={(e) => setFirstDue(e.target.value.replace(/\D/g, ''))}
-                maxLength={3}
-              />
-            </Field>
-            {Number(installments) > 1 && (
-              <Field label="Entre parcelas (dias)" htmlFor="forma-intervalo">
-                <Input
-                  id="forma-intervalo"
-                  inputMode="numeric"
-                  value={intervalDays}
-                  onChange={(e) => setIntervalDays(e.target.value.replace(/\D/g, ''))}
-                  maxLength={3}
-                />
-              </Field>
+            {kind !== 'fiado' && (
+              <>
+                <Field label="Parcelas" htmlFor="forma-parcelas">
+                  <Input
+                    id="forma-parcelas"
+                    inputMode="numeric"
+                    value={installments}
+                    onChange={(e) => setInstallments(e.target.value.replace(/\D/g, ''))}
+                    maxLength={2}
+                  />
+                </Field>
+                <Field label="1º vencimento (dias)" htmlFor="forma-primeiro" hint="0 = no dia da venda (à vista).">
+                  <Input
+                    id="forma-primeiro"
+                    inputMode="numeric"
+                    value={firstDue}
+                    onChange={(e) => setFirstDue(e.target.value.replace(/\D/g, ''))}
+                    maxLength={3}
+                  />
+                </Field>
+                {Number(installments) > 1 && (
+                  <Field label="Entre parcelas (dias)" htmlFor="forma-intervalo">
+                    <Input
+                      id="forma-intervalo"
+                      inputMode="numeric"
+                      value={intervalDays}
+                      onChange={(e) => setIntervalDays(e.target.value.replace(/\D/g, ''))}
+                      maxLength={3}
+                    />
+                  </Field>
+                )}
+              </>
             )}
           </div>
           <p className="text-[13px] text-muted-foreground">
-            Condição: {termsLabel({ installments: Number(installments) || 1, first_due_days: Number(firstDue) || 0, interval_days: Number(intervalDays) || 30 })}.
-            Só vale com o financeiro ligado (Configurações).
+            {kind === 'fiado' ? (
+              <>Vende na caderneta do cliente: a compra vence no dia de vencimento do mês seguinte. Só vale com o fiado ligado (Configurações).</>
+            ) : (
+              <>
+                Condição: {termsLabel({ installments: Number(installments) || 1, first_due_days: Number(firstDue) || 0, interval_days: Number(intervalDays) || 30 })}.
+                Só vale com o financeiro ligado (Configurações).
+              </>
+            )}
           </p>
           {method && (
             <label className="flex items-center gap-2 text-sm">
