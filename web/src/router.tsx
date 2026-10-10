@@ -18,9 +18,13 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
 import { OrdersPage } from './pages/OrdersPage';
+import { PayablesPage } from './pages/PayablesPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { PriceListsPage } from './pages/PriceListsPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { PurchaseOrderEditorPage } from './pages/purchases/PurchaseOrderEditorPage';
+import { PurchaseOrderPage } from './pages/purchases/PurchaseOrderPage';
+import { PurchasesPage } from './pages/purchases/PurchasesPage';
 import { ReceivablesPage } from './pages/ReceivablesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -122,6 +126,11 @@ export const router = createBrowserRouter([
           { path: 'tabelas-de-preco', element: <PriceListsPage /> },
           { path: 'fluxo-de-pedidos', element: <WorkflowsPage /> },
           { path: 'estoque/entrada', element: <StockEntryPage /> },
+          { path: 'compras', element: <PurchasesPage /> },
+          { path: 'compras/novo', element: <PurchaseOrderEditorPage /> },
+          { path: 'compras/:id', element: <PurchaseOrderPage /> },
+          { path: 'compras/:id/editar', element: <PurchaseOrderEditorPage /> },
+          { path: 'contas-a-pagar', element: <PayablesPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
         ],
       },

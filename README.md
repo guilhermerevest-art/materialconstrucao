@@ -190,15 +190,35 @@ do administrador.
 - **Sem trava:** o saldo pode ficar negativo; o PDV mostra "Est." na busca, em vermelho quando zerado ou
   negativo, e o filtro **Negativos** mostra o que precisa de acerto.
 - **Entrada de nota:** importe o XML da NF-e de compra (lido no navegador) ou lance à mão. Cada item da nota é
-  ligado a um produto da loja, com a conversão de unidade ("UN por MIL" = 1000 para o milheiro de tijolo). Na
-  próxima nota do mesmo fornecedor, o item já vem reconhecido pelo código dele, com a mesma conversão; senão,
+  ligado a um produto da loja, com a conversão de unidade ("UN em cada MIL" = 1000 para o milheiro de tijolo).
+  Na próxima nota do mesmo fornecedor, o item já vem reconhecido pelo código dele, com a mesma conversão; senão,
   pelo código ou nome do produto. O custo de cada item considera desconto, frete, seguro e outras despesas
   da nota e vira o **último custo** do produto. A mesma nota (chave de acesso) não entra duas vezes.
+- **Compra numa unidade, venda em outra:** no cadastro do produto, a **unidade de compra** e quanto vem nela
+  (vende KG, compra SC com 50). A nota em SC já vem com 50 na conversão; no lançamento à mão, escolha SC ou KG
+  na linha (10 SC entram 500 KG, e o custo do saco vira o custo do KG). O estoque fica sempre na unidade de
+  venda. O pedido de compra sai em sacos para o fornecedor.
 - **Ajuste:** "Contei, o saldo é" (inventário) ou "Somar / tirar" (quebra, avaria), sempre com motivo no extrato.
 - **Mínimo por loja:** abaixo dele o produto aparece com o selo **Comprar** e no filtro **Abaixo do mínimo**.
 - **Transferência entre lojas:** sai de uma e entra na outra no mesmo momento, com as duas pontas no extrato.
 - **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
 - Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
+
+## Compras
+
+Menu **Operação → Compras** (administrador). Não muda nada na venda: quem não usa, não vê.
+
+- **Fornecedores:** a nota de compra cadastra o fornecedor sozinha pelo CNPJ (as notas que já tinham entrado
+  também viram cadastro). Dá para cadastrar à mão, com contato e WhatsApp (o CNPJ busca a razão social na
+  Receita, com o fiscal configurado). Inativo não aparece para pedidos novos.
+- **O que comprar:** os produtos abaixo do mínimo da loja, já descontado o que foi pedido e ainda não chegou,
+  com o último fornecedor e o último custo de cada um. Marque, ajuste a quantidade (em sacos, quando o produto
+  tem unidade de compra) e **Montar pedido de compra**: sai um rascunho por fornecedor.
+- **Pedido de compra:** rascunho → enviado → recebido em parte → recebido. Manda ao fornecedor pelo WhatsApp da
+  loja (mensagem com a lista e o PDF), ou baixe o PDF; sem a EvolutionAPI, abre o WhatsApp do aparelho com a
+  mensagem pronta. Edita e cancela enquanto nada chegou; recebido em parte, **Encerrar sem o resto**.
+- **Receber:** o botão do pedido abre a entrada de nota com o que falta chegar. Importando o XML, o pedido
+  aberto do mesmo fornecedor é escolhido sozinho. O que chega é baixado do pedido.
 
 ## Entregas e retiradas
 
@@ -242,7 +262,7 @@ Botão **Separação** no pedido confirmado (e **Separar** em cada entrega agend
 ## Financeiro (opcional)
 
 Desligado por padrão: a venda funciona como sempre. O admin liga em **Administração → Configurações → aba
-Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
+Financeiro**; aí aparece o menu **Financeiro** (Caixa, Contas a receber e, para o admin, Contas a pagar).
 
 - **Forma de pagamento com condição:** cada forma tem um tipo (dinheiro, PIX, cartão, boleto, crediário,
   outro) e a condição: número de parcelas, dias até o 1º vencimento e entre parcelas. "Crediário 3x" =
@@ -257,12 +277,19 @@ Financeiro**; aí aparece o menu **Financeiro** (Caixa e Contas a receber).
   ou o pedido, recebe parcial ou total, em qualquer forma (crediário é como se vende, não como se paga), com o
   troco calculado no dinheiro. **Sangria** e **suprimento** com motivo. No fechamento, o operador informa o
   dinheiro contado e o sistema mostra a diferença para o esperado (troco + dinheiro recebido + suprimentos −
-  sangrias). Estorno de recebimento só com o caixa ainda aberto, pelo operador ou pelo admin.
+  sangrias − devoluções e contas pagas em dinheiro). Estorno de recebimento só com o caixa ainda aberto, pelo operador ou pelo admin.
 - **PIX:** com a chave PIX da loja configurada, o recebimento em PIX mostra o QR Code com o valor (e o "copia e
   cola"), e o PDF do pedido confirmado na forma PIX sai com o QR Code do que falta pagar. É o PIX estático do
   Banco Central: a confirmação é feita olhando o extrato. Baixa automática precisa de integração com o banco
   (PSP) e não faz parte desta versão.
 - O vendedor vê as parcelas e caixas da própria loja; o admin, de todas.
+- **Contas a pagar** (administrador): as duplicatas da nota de compra entram na entrada de nota (marcadas
+  sozinhas quando o XML traz a cobrança; sem duplicata, uma parcela com o total para 30 dias, editável). Contas
+  da loja (aluguel, energia, frete...) em **Nova conta**, em uma ou várias parcelas. Resumo de vencido, hoje,
+  7 dias e total em aberto. Pagamento parcial ou total: em **dinheiro do caixa** sai da gaveta do caixa aberto
+  (entra no fechamento como "contas pagas"); transferência, PIX, boleto ou cartão saem da conta da loja.
+  Estorno volta a conta para aberto (o de dinheiro só com aquele caixa aberto). Conta sem pagamento é
+  corrigida ou cancelada.
 
 ## Fiado (caderneta)
 

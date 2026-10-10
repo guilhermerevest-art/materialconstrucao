@@ -19,6 +19,8 @@ import { useDebouncedValue, useDocumentTitle } from '@/lib/hooks';
 import type { CashSession, CashSummary, CashView, Paginated, Receivable, ReceivablePayment, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+const MOVEMENT_LABEL = { withdrawal: 'Sangria', deposit: 'Suprimento', refund: 'Devolução', payable: 'Conta paga' } as const;
+
 const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
 function OpenCash() {
@@ -402,6 +404,8 @@ export function CashPage() {
                 troco {formatMoney(view.session.opening_amount)}
                 {view.summary.withdrawals > 0 && ` · sangrias ${formatMoney(view.summary.withdrawals)}`}
                 {view.summary.deposits > 0 && ` · suprimentos ${formatMoney(view.summary.deposits)}`}
+                {view.summary.refunds > 0 && ` · devoluções ${formatMoney(view.summary.refunds)}`}
+                {view.summary.payables > 0 && ` · contas pagas ${formatMoney(view.summary.payables)}`}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-card px-5 py-4">
@@ -453,10 +457,10 @@ export function CashPage() {
                   </li>
                 ))}
                 {view.movements.map((m) => (
-                  <li key={`m${m.id}`} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+                  <li key={`${m.kind}${m.id}`} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
                     <span className="w-14 text-muted-foreground tabular-nums">{formatDateTime(m.created_at).slice(-5)}</span>
                     <span className="min-w-0 flex-1">
-                      {m.kind === 'withdrawal' ? 'Sangria' : m.kind === 'refund' ? 'Devolução' : 'Suprimento'}: {m.reason}
+                      {MOVEMENT_LABEL[m.kind]}: {m.reason}
                     </span>
                     <span className={cn('w-24 text-right font-semibold tabular-nums', m.kind === 'deposit' ? 'text-success' : 'text-destructive')}>
                       {m.kind === 'deposit' ? '+' : '-'}

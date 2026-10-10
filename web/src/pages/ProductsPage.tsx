@@ -309,6 +309,8 @@ function ProductFormDialog({
   const [unit, setUnit] = useState('UN');
   const [price, setPrice] = useState('');
   const [active, setActive] = useState(true);
+  const [purchaseUnit, setPurchaseUnit] = useState('');
+  const [purchaseFactor, setPurchaseFactor] = useState('');
   const [fiscal, setFiscal] = useState<FiscalForm>(() => fiscalToForm(undefined));
   const [pricingForm, setPricingForm] = useState<PricingForm>(emptyPricingForm);
   const [tab, setTab] = useState('geral');
@@ -332,6 +334,8 @@ function ProductFormDialog({
     setUnit(product?.unit ?? 'UN');
     setPrice(product ? decimalToInput(product.price) : '');
     setActive(product?.active ?? true);
+    setPurchaseUnit(product?.purchase_unit ?? '');
+    setPurchaseFactor(product?.purchase_factor ? decimalToInput(product.purchase_factor) : '');
     setFiscal(fiscalToForm(product?.fiscal));
     setPricingForm(emptyPricingForm);
     setTab('geral');
@@ -371,6 +375,15 @@ function ProductFormDialog({
       setTab('geral');
       return setError('Preço inválido. Exemplo: 38,90');
     }
+    const factor = purchaseUnit.trim() ? parseDecimal(purchaseFactor) : null;
+    if (purchaseUnit.trim() && (factor === null || factor <= 0)) {
+      setTab('geral');
+      return setError(`Informe quantos ${unit || 'UN'} vêm em cada ${purchaseUnit.trim().toUpperCase()}. Exemplo: 50`);
+    }
+    if (purchaseUnit.trim().toUpperCase() === unit.trim().toUpperCase()) {
+      setTab('geral');
+      return setError('A unidade de compra é a mesma da venda. Deixe em branco se não muda.');
+    }
     const fiscalBody = fiscalToBody(fiscal);
     if ('invalid' in fiscalBody) {
       setTab('fiscal');
@@ -383,7 +396,15 @@ function ProductFormDialog({
     }
     setError(null);
     save.mutate({
-      body: { code, name, unit, price: Math.round(parsedPrice * 100) / 100, active, fiscal: fiscalBody.body },
+      body: {
+        code,
+        name,
+        unit,
+        price: Math.round(parsedPrice * 100) / 100,
+        active,
+        purchase: purchaseUnit.trim() ? { unit: purchaseUnit.trim(), factor } : null,
+        fiscal: fiscalBody.body,
+      },
       pricingBody: pricingBody.body,
     });
   }
@@ -448,6 +469,34 @@ function ProductFormDialog({
                     className="text-right tabular-nums"
                   />
                 </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Unidade de compra" htmlFor="produto-unidade-compra" hint="Só se compra numa unidade e vende em outra. Ex.: SC">
+                  <Input
+                    id="produto-unidade-compra"
+                    list="unidades"
+                    value={purchaseUnit}
+                    onChange={(e) => setPurchaseUnit(e.target.value.toUpperCase())}
+                    maxLength={10}
+                    placeholder="Igual à venda"
+                  />
+                </Field>
+                {purchaseUnit.trim() && (
+                  <Field
+                    label={`${unit || 'UN'} em cada ${purchaseUnit.trim()}`}
+                    htmlFor="produto-fator-compra"
+                    hint={`A nota e o pedido de compra em ${purchaseUnit.trim()} viram ${unit || 'UN'} no estoque.`}
+                  >
+                    <Input
+                      id="produto-fator-compra"
+                      inputMode="decimal"
+                      value={purchaseFactor}
+                      onChange={(e) => setPurchaseFactor(e.target.value)}
+                      placeholder="50"
+                      className="text-right tabular-nums"
+                    />
+                  </Field>
+                )}
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} />

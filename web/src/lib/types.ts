@@ -126,6 +126,9 @@ export type Product = {
   active: boolean;
   created_at: string;
   fiscal: ProductFiscal;
+  /** Unidade em que a loja compra (SC) e quantas unidades de venda vêm em cada uma (50 KG). */
+  purchase_unit?: string | null;
+  purchase_factor?: number | null;
   track_stock?: boolean;
   /** Saldo na loja pedida na busca (stock_store_id); nulo se o produto não controla estoque. */
   stock?: number | null;
@@ -156,7 +159,7 @@ export type StockList = Paginated<StockItem> & {
   summary: { below_min: number; negative: number };
 };
 
-export type StockMovementKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in';
+export type StockMovementKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'return';
 
 export type StockMovement = {
   id: number;
@@ -195,6 +198,7 @@ export type StockEntry = {
   created_at: string;
   user_name: string;
   items_count: number;
+  purchase_order_id: number | null;
 };
 
 export type PaymentKind = 'cash' | 'pix' | 'card' | 'boleto' | 'store_credit' | 'fiado' | 'other';
@@ -726,6 +730,10 @@ export type CashSummary = {
   received: number;
   withdrawals: number;
   deposits: number;
+  /** Devoluções em dinheiro. */
+  refunds: number;
+  /** Contas pagas com o dinheiro da gaveta. */
+  payables: number;
   expected_cash: number;
   difference: number | null;
 };
@@ -734,7 +742,15 @@ export type CashView = {
   session: CashSession;
   summary: CashSummary;
   payments: ReceivablePayment[];
-  movements: { id: number; kind: 'withdrawal' | 'deposit' | 'refund'; amount: number; reason: string; created_at: string; user_name: string }[];
+  movements: {
+    id: number;
+    kind: 'withdrawal' | 'deposit' | 'refund' | 'payable';
+    amount: number;
+    reason: string;
+    created_at: string;
+    user_name: string;
+    payable_id: number | null;
+  }[];
 };
 
 export type ClientCredit = {
@@ -958,3 +974,127 @@ export type OrderReturnsView = {
   client_credit: number;
   options: { finance: boolean; cash_open: boolean; fiado: boolean; payment_kind: PaymentKind | null; open_receivables: number };
 };
+
+export type Supplier = {
+  id: number;
+  name: string;
+  /** CNPJ ou CPF, só dígitos. */
+  document: string | null;
+  contact_name: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at: string;
+  open_orders?: number;
+  open_payables?: number;
+  last_entry_at?: string | null;
+};
+
+export type PurchaseStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled';
+
+export type PurchaseOrder = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  supplier_id: number;
+  supplier_name: string;
+  supplier_document: string | null;
+  status: PurchaseStatus;
+  expected_date: string | null;
+  notes: string | null;
+  total_amount: number;
+  created_at: string;
+  sent_at: string | null;
+  received_at: string | null;
+  closed_short: boolean;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  user_name: string;
+  items_count?: number;
+};
+
+export type PurchaseOrderItem = {
+  id: number;
+  product_id: number;
+  code: string | null;
+  product_name: string;
+  unit: string;
+  quantity: number;
+  unit_cost: number | null;
+  received_quantity: number;
+  /** Pedido em unidade de compra (quantidade e custo acima continuam na unidade de venda). */
+  purchase_unit: string | null;
+  purchase_factor: number | null;
+};
+
+export type PurchaseOrderDetail = PurchaseOrder & {
+  supplier: Supplier;
+  items: PurchaseOrderItem[];
+  entries: { id: number; invoice_number: string | null; invoice_series: string | null; total_amount: number; created_at: string; user_name: string }[];
+  payables: PayableInstallment[];
+  whatsapp_message: string;
+};
+
+export type PurchaseSuggestion = {
+  product_id: number;
+  code: string | null;
+  name: string;
+  unit: string;
+  quantity: number;
+  min_quantity: number;
+  on_order: number;
+  suggested: number;
+  purchase_unit: string | null;
+  purchase_factor: number | null;
+  suggested_purchase: number | null;
+  unit_cost: number | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
+};
+
+export type PayableInstallment = {
+  id: number;
+  installment: number;
+  installments: number;
+  due_date: string;
+  amount: number;
+  paid_amount: number;
+  status: 'open' | 'paid' | 'cancelled';
+};
+
+export type Payable = PayableInstallment & {
+  store_id: number;
+  store_name: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  description: string;
+  category: string | null;
+  document_number: string | null;
+  remaining: number;
+  entry_id: number | null;
+  purchase_order_id: number | null;
+  created_at: string;
+  paid_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  overdue: boolean;
+};
+
+export type PayableMethod = 'cash' | 'bank' | 'pix' | 'boleto' | 'card' | 'other';
+
+export type PayablePayment = {
+  id: number;
+  amount: number;
+  paid_on: string;
+  method: PayableMethod;
+  note: string | null;
+  created_at: string;
+  reversed_at: string | null;
+  reverse_reason: string | null;
+  user_name: string;
+  cash_session_id: number | null;
+  session_closed: boolean;
+};
+
+export type PayablesSummary = { overdue: number; today: number; next_7_days: number; next_30_days: number; open_total: number };

@@ -27,6 +27,7 @@ const KIND_LABEL: Record<StockMovementKind, string> = {
   adjustment: 'Ajuste',
   transfer_out: 'Transferência enviada',
   transfer_in: 'Transferência recebida',
+  return: 'Devolução de cliente',
 };
 
 const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);

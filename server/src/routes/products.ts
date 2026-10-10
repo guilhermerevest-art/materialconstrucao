@@ -19,6 +19,23 @@ const productSchema = z.object({
     .transform((u) => u.toUpperCase()),
   price: z.number('Informe o preço.').min(0, 'O preço não pode ser negativo.').max(9_999_999_999),
   active: z.boolean().default(true),
+  // Unidade de compra (ex.: vende KG, compra SC com 50). Ausente, mantém; nulo, apaga.
+  purchase: z
+    .object({
+      unit: z
+        .string('Informe a unidade de compra.')
+        .trim()
+        .min(1, 'Informe a unidade de compra.')
+        .max(10, 'Use no máximo 10 caracteres na unidade.')
+        .transform((u) => u.toUpperCase()),
+      factor: z
+        .number('Informe quanto vem em cada unidade de compra.')
+        .positive('A quantidade por unidade de compra precisa ser maior que zero.')
+        .max(1_000_000)
+        .transform((v) => Math.round(v * 10_000) / 10_000),
+    })
+    .nullable()
+    .optional(),
   // Aba "Fiscal". Ausente, mantém o que está salvo; presente, substitui tudo.
   fiscal: productFiscalSchema.optional(),
 });
@@ -52,7 +69,7 @@ const FISCAL_COLUMNS = [
   'fiscal_notes',
 ] as const satisfies readonly (keyof ProductFiscalInput)[];
 
-const PRODUCT_COLUMNS = `id, code, name, unit, price, active, created_at, ${FISCAL_COLUMNS.join(', ')}`;
+const PRODUCT_COLUMNS = `id, code, name, unit, price, active, created_at, purchase_unit, purchase_factor, ${FISCAL_COLUMNS.join(', ')}`;
 const NOT_FOUND = 'Produto não encontrado.';
 
 type ProductRow = Record<string, unknown>;
@@ -72,6 +89,13 @@ function toProduct(row: ProductRow) {
 function writableColumns(body: z.infer<typeof productSchema>) {
   const columns: string[] = ['code', 'name', 'unit', 'price', 'active'];
   const values: unknown[] = [body.code, body.name, body.unit, body.price, body.active];
+  if (body.purchase !== undefined) {
+    if (body.purchase && body.purchase.unit === body.unit) {
+      throw new HttpError(400, 'A unidade de compra é a mesma da venda. Deixe em branco se não muda.');
+    }
+    columns.push('purchase_unit', 'purchase_factor');
+    values.push(body.purchase?.unit ?? null, body.purchase?.factor ?? null);
+  }
   if (body.fiscal) {
     for (const column of FISCAL_COLUMNS) {
       columns.push(column);

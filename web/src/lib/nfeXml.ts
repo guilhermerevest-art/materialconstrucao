@@ -13,6 +13,9 @@ export type NfeItem = {
   total: number;
 };
 
+/** Duplicata da nota (cobrança): o boleto ou parcela a pagar ao fornecedor. */
+export type NfeDuplicate = { number: string | null; dueDate: string; amount: number };
+
 export type NfeInvoice = {
   accessKey: string | null;
   number: string | null;
@@ -22,6 +25,7 @@ export type NfeInvoice = {
   supplierName: string | null;
   total: number | null;
   items: NfeItem[];
+  duplicates: NfeDuplicate[];
 };
 
 const text = (parent: Element | Document | null | undefined, tag: string) =>
@@ -66,6 +70,12 @@ export function parseNfeXml(xml: string): NfeInvoice {
   if (!items.length) throw new Error('A nota não tem itens.');
 
   const icmsTot = infNFe.getElementsByTagName('ICMSTot')[0];
+  const cobr = infNFe.getElementsByTagName('cobr')[0];
+  const duplicates = [...(cobr?.getElementsByTagName('dup') ?? [])].flatMap((dup): NfeDuplicate[] => {
+    const dueDate = text(dup, 'dVenc');
+    const amount = number(text(dup, 'vDup'));
+    return dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) && amount > 0 ? [{ number: text(dup, 'nDup'), dueDate, amount }] : [];
+  });
   return {
     accessKey: accessKey && /^\d{44}$/.test(accessKey) ? accessKey : null,
     number: text(ide, 'nNF'),
@@ -75,5 +85,6 @@ export function parseNfeXml(xml: string): NfeInvoice {
     supplierName: text(emit, 'xNome'),
     total: icmsTot ? number(text(icmsTot, 'vNF')) : null,
     items,
+    duplicates,
   };
 }

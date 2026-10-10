@@ -235,10 +235,16 @@ export async function sessionSummary(db: pg.PoolClient, session: CashSession) {
        from cash_movements where cash_session_id = $1`,
     [session.id],
   );
+  // Contas pagas com o dinheiro da gaveta.
+  const paid = await db.query<{ payables: number }>(
+    'select coalesce(sum(amount), 0) as payables from payable_payments where cash_session_id = $1 and reversed_at is null',
+    [session.id],
+  );
   const cash = methods.rows.filter((m) => m.kind === 'cash').reduce((sum, m) => sum + m.amount, 0);
   const { withdrawals, deposits, refunds } = movements.rows[0]!;
-  // Devolução em dinheiro também sai da gaveta.
-  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals - refunds) * 100) / 100;
+  const payables = paid.rows[0]!.payables;
+  // Devolução em dinheiro e conta paga também saem da gaveta.
+  const expectedCash = Math.round((session.opening_amount + cash + deposits - withdrawals - refunds - payables) * 100) / 100;
   const received = Math.round(methods.rows.reduce((sum, m) => sum + m.amount, 0) * 100) / 100;
   return {
     methods: methods.rows,
@@ -246,6 +252,7 @@ export async function sessionSummary(db: pg.PoolClient, session: CashSession) {
     withdrawals,
     deposits,
     refunds,
+    payables,
     expected_cash: expectedCash,
     difference: session.counted_amount === null ? null : Math.round((session.counted_amount - expectedCash) * 100) / 100,
   };

@@ -123,11 +123,21 @@ async function sessionView(db: pg.PoolClient, session: CashSession) {
      order by received_at desc, id desc`,
     [session.id],
   );
+  // Sangria, suprimento, devolução e conta paga com o dinheiro da gaveta.
   const movements = await db.query(
-    `select m.id, m.kind, m.amount, m.reason, m.created_at, u.name as user_name
-       from cash_movements m join users u on u.id = m.user_id
-      where m.cash_session_id = $1
-      order by m.created_at desc`,
+    `select * from (
+       select m.id, m.kind, m.amount, m.reason, m.created_at, u.name as user_name, null::bigint as payable_id
+         from cash_movements m join users u on u.id = m.user_id
+        where m.cash_session_id = $1
+       union all
+       select p.id, 'payable', p.amount, concat_ws(' - ', pb.description, sp.name), p.created_at, u.name, pb.id
+         from payable_payments p
+         join payables pb on pb.id = p.payable_id
+         left join suppliers sp on sp.id = pb.supplier_id
+         join users u on u.id = p.user_id
+        where p.cash_session_id = $1 and p.reversed_at is null
+     ) m
+     order by created_at desc`,
     [session.id],
   );
   return { session, summary: await sessionSummary(db, session), payments: payments.rows, movements: movements.rows };

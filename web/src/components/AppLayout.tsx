@@ -19,7 +19,7 @@ import {
 
 /** Módulo opcional que precisa estar ligado para o item aparecer. */
 type NavFlag = 'finance' | 'fiado';
-type NavItem = { to: string; label: string; end?: boolean; flag?: NavFlag };
+type NavItem = { to: string; label: string; end?: boolean; flag?: NavFlag; adminOnly?: boolean };
 type NavGroup = { label: string; items: NavItem[]; adminOnly?: boolean };
 
 // O que se usa o dia inteiro fica direto na barra; o resto, agrupado por área,
@@ -36,6 +36,7 @@ const NAV: (NavItem | NavGroup)[] = [
       { to: '/fiscal', label: 'Notas fiscais' },
       { to: '/entregas', label: 'Entregas' },
       { to: '/estoque', label: 'Estoque' },
+      { to: '/compras', label: 'Compras', adminOnly: true },
     ],
   },
   {
@@ -43,6 +44,7 @@ const NAV: (NavItem | NavGroup)[] = [
     items: [
       { to: '/caixa', label: 'Caixa', flag: 'finance' },
       { to: '/contas-a-receber', label: 'Contas a receber', flag: 'finance' },
+      { to: '/contas-a-pagar', label: 'Contas a pagar', flag: 'finance', adminOnly: true },
       { to: '/fiado', label: 'Fiado', flag: 'fiado' },
     ],
   },
@@ -97,7 +99,8 @@ export function AppLayout() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   // Itens de módulo opcional (financeiro, fiado) só aparecem com o módulo ligado; grupo vazio some.
   const flagOn = (item: NavItem) =>
-    !item.flag || (item.flag === 'finance' ? Boolean(user.finance_enabled) : Boolean(user.fiado_enabled));
+    (!item.adminOnly || isAdmin) &&
+    (!item.flag || (item.flag === 'finance' ? Boolean(user.finance_enabled) : Boolean(user.fiado_enabled)));
   const nav = NAV.flatMap((entry): (NavItem | NavGroup)[] => {
     if (!isGroup(entry)) return flagOn(entry) ? [entry] : [];
     if (entry.adminOnly && !isAdmin) return [];
