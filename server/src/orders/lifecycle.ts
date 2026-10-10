@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { SessionUser } from '../db/session.js';
 import { HttpError } from '../errors.js';
+import { applyOrderStock, returnOrderStock } from '../stock/queries.js';
 import { enterWorkflow } from '../workflow/queries.js';
 
 /**
@@ -9,9 +10,15 @@ import { enterWorkflow } from '../workflow/queries.js';
  */
 export async function onOrderConfirmed(db: pg.PoolClient, orderId: number, user: SessionUser) {
   await enterWorkflow(db, orderId, user.id);
+  await applyOrderStock(db, orderId, user);
 }
 
-type CancellableOrder = { status: 'quote' | 'order' | 'cancelled'; stage_id: number | null; stage_name: string | null };
+type CancellableOrder = {
+  status: 'quote' | 'order' | 'cancelled';
+  stage_id: number | null;
+  stage_name: string | null;
+  stock_applied: boolean;
+};
 
 /**
  * Notas fiscais do pedido que impedem o cancelamento. A tabela é do módulo fiscal
@@ -37,7 +44,7 @@ async function assertNoActiveInvoice(db: pg.PoolClient, orderId: number) {
  */
 export async function cancelOrder(db: pg.PoolClient, orderId: number, user: SessionUser, reason: string) {
   const { rows } = await db.query<CancellableOrder>(
-    `select o.status, o.stage_id, ws.name as stage_name
+    `select o.status, o.stage_id, ws.name as stage_name, o.stock_applied
        from orders o
        left join workflow_stages ws on ws.id = o.stage_id
       where o.id = $1
@@ -52,6 +59,7 @@ export async function cancelOrder(db: pg.PoolClient, orderId: number, user: Sess
     await assertNoActiveInvoice(db, orderId);
   }
 
+  if (order.stock_applied) await returnOrderStock(db, orderId, user, `Pedido cancelado: ${reason}`);
   await db.query(
     `update orders
         set status = 'cancelled', cancelled_from = status, cancelled_at = now(), cancelled_by = $2,

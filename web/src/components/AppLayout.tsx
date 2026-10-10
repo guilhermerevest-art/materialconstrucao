@@ -23,6 +23,7 @@ const MAIN_NAV = [
   { to: '/monitor', label: 'Monitor', end: false },
   { to: '/clientes', label: 'Clientes', end: false },
   { to: '/produtos', label: 'Produtos', end: false },
+  { to: '/estoque', label: 'Estoque', end: false },
   { to: '/relatorios', label: 'Relatórios', end: false },
 ];
 

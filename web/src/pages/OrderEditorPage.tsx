@@ -326,7 +326,7 @@ export function OrderEditorPage() {
               )}
             </CardHeader>
             <CardContent>
-              <ProductSearch ref={productSearch} onAdd={addProduct} invalid={Boolean(errors.items)} />
+              <ProductSearch ref={productSearch} onAdd={addProduct} invalid={Boolean(errors.items)} storeId={storeId} />
               {errors.items && <p className="mt-2 text-[13px] text-destructive">{errors.items}</p>}
             </CardContent>
             <CartTable

@@ -14,6 +14,8 @@ import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { StockEntryPage } from './pages/StockEntryPage';
+import { StockPage } from './pages/StockPage';
 import { StoresPage } from './pages/StoresPage';
 import { SuperLoginPage } from './pages/SuperLoginPage';
 import { SuperTenantsPage } from './pages/SuperTenantsPage';
@@ -91,6 +93,7 @@ export const router = createBrowserRouter([
       { path: 'produtos', element: <ProductsPage /> },
       { path: 'relatorios', element: <ReportsPage /> },
       { path: 'monitor', element: <MonitorPage /> },
+      { path: 'estoque', element: <StockPage /> },
       {
         element: <RequireAdmin />,
         children: [
@@ -98,6 +101,7 @@ export const router = createBrowserRouter([
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
           { path: 'fluxo-de-pedidos', element: <WorkflowsPage /> },
+          { path: 'estoque/entrada', element: <StockEntryPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
         ],
       },

@@ -62,6 +62,67 @@ export type Product = {
   price: number;
   active: boolean;
   created_at: string;
+  track_stock?: boolean;
+  /** Saldo na loja pedida na busca (stock_store_id); nulo se o produto não controla estoque. */
+  stock?: number | null;
+};
+
+export type StockItem = {
+  id: number;
+  code: string | null;
+  name: string;
+  unit: string;
+  price: number;
+  cost_price: number | null;
+  track_stock: boolean;
+  quantity: number;
+  min_quantity: number | null;
+};
+
+export type StockList = Paginated<StockItem> & {
+  store_id: number;
+  summary: { below_min: number; negative: number };
+};
+
+export type StockMovementKind = 'entry' | 'sale' | 'sale_cancel' | 'adjustment' | 'transfer_out' | 'transfer_in';
+
+export type StockMovement = {
+  id: number;
+  kind: StockMovementKind;
+  quantity: number;
+  balance_after: number;
+  unit_cost: number | null;
+  order_id: number | null;
+  entry_id: number | null;
+  note: string | null;
+  created_at: string;
+  user_name: string;
+  other_store_name: string | null;
+  supplier_name: string | null;
+  invoice_number: string | null;
+};
+
+export type ProductStock = {
+  store_id: number;
+  product: Pick<StockItem, 'id' | 'code' | 'name' | 'unit' | 'price' | 'cost_price' | 'track_stock'>;
+  balances: { store_id: number; store_name: string; quantity: number; min_quantity: number | null }[];
+  movements: StockMovement[];
+};
+
+export type StockEntry = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  supplier_name: string | null;
+  supplier_document: string | null;
+  invoice_number: string | null;
+  invoice_series: string | null;
+  access_key: string | null;
+  issued_at: string | null;
+  total_amount: number;
+  created_at: string;
+  user_name: string;
+  items_count: number;
 };
 
 export type PaymentMethod = {

@@ -119,7 +119,7 @@ entre lojas, tanto na API quanto direto no banco (RLS).
 - **Orçamento** pode ser editado e convertido em pedido. **Pedido** é venda confirmada e não é editado.
 - Ao editar um orçamento, os itens que já estavam nele mantêm o preço da época; itens novos usam o preço atual do catálogo.
 - O item do pedido guarda nome, código, unidade e preço do produto, para o pedido não mudar quando o catálogo mudar.
-- Sem trava de estoque (V1).
+- Estoque: ver a seção **Estoque** abaixo. A venda não trava por falta de saldo; o PDV mostra o saldo na busca.
 - **Desconto** vale para o pedido inteiro, em percentual (até 100%) ou em valor (até o valor dos produtos).
   O servidor calcula subtotal, desconto e total; o total da listagem, do painel e do WhatsApp já vem com desconto.
   Ao editar o orçamento, o desconto é recalculado sobre os itens novos (o percentual continua o mesmo).
@@ -147,6 +147,30 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   cadastra as formas em Administração → Formas de pagamento; toda lojamestre começa com Dinheiro, PIX,
   Cartão de débito, Cartão de crédito e Boleto. O pedido guarda o nome da forma da época, e forma usada
   em pedidos não pode ser excluída, só desativada (sai da lista, mas o orçamento que já a tinha continua com ela).
+
+## Estoque
+
+Saldo por loja (não há depósito central), no menu **Estoque**. Todo mundo consulta, inclusive o saldo das
+outras lojas (no extrato do produto), para dizer ao cliente onde tem; ajustar, transferir e lançar nota é
+do administrador.
+
+- **Venda baixa na confirmação do pedido** (criado como pedido, convertido ou salvo como pedido), na loja do
+  pedido. **Cancelar devolve** exatamente o que saiu. Orçamento não mexe no estoque. Pedidos confirmados antes
+  do estoque existir não têm baixa.
+- **Excluir pedido confirmado não é mais possível:** cancele (o cancelamento devolve o estoque). Excluir
+  continua valendo para orçamento e documento cancelado.
+- **Sem trava:** o saldo pode ficar negativo; o PDV mostra "Est." na busca, em vermelho quando zerado ou
+  negativo, e o filtro **Negativos** mostra o que precisa de acerto.
+- **Entrada de nota:** importe o XML da NF-e de compra (lido no navegador) ou lance à mão. Cada item da nota é
+  ligado a um produto da loja, com a conversão de unidade ("UN por MIL" = 1000 para o milheiro de tijolo). Na
+  próxima nota do mesmo fornecedor, o item já vem reconhecido pelo código dele, com a mesma conversão; senão,
+  pelo código ou nome do produto. O custo de cada item considera desconto, frete, seguro e outras despesas
+  da nota e vira o **último custo** do produto. A mesma nota (chave de acesso) não entra duas vezes.
+- **Ajuste:** "Contei, o saldo é" (inventário) ou "Somar / tirar" (quebra, avaria), sempre com motivo no extrato.
+- **Mínimo por loja:** abaixo dele o produto aparece com o selo **Comprar** e no filtro **Abaixo do mínimo**.
+- **Transferência entre lojas:** sai de uma e entra na outra no mesmo momento, com as duas pontas no extrato.
+- **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
+- Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
 
 ## Fluxo de pedidos e monitores
 

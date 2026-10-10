@@ -399,12 +399,18 @@ export function ordersRouter(ctx: AppContext) {
     res.json({ order, notification });
   });
 
+  // Excluir apaga de vez, sem estornar nada: vale para orçamento e documento cancelado.
+  // Pedido confirmado é cancelado primeiro (o cancelamento devolve estoque e estorna o resto).
   router.delete('/:id', requireAdmin, async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rowCount } = await withSession(pool, currentUser(req), (db) =>
-      db.query('delete from orders where id = $1', [id]),
-    );
-    if (!rowCount) throw new HttpError(404, NOT_FOUND);
+    await withSession(pool, currentUser(req), async (db) => {
+      const { rows } = await db.query<{ status: string }>('select status from orders where id = $1 for update', [id]);
+      if (!rows[0]) throw new HttpError(404, NOT_FOUND);
+      if (rows[0].status === 'order') {
+        throw new HttpError(409, 'Pedido confirmado não é excluído. Cancele o pedido: o cancelamento devolve o estoque.');
+      }
+      await db.query('delete from orders where id = $1', [id]);
+    });
     res.status(204).end();
   });
 
