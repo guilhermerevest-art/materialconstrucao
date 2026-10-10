@@ -5,6 +5,7 @@ import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { MonitorPage } from './pages/MonitorPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrderEditorPage } from './pages/OrderEditorPage';
@@ -17,6 +18,7 @@ import { StoresPage } from './pages/StoresPage';
 import { SuperLoginPage } from './pages/SuperLoginPage';
 import { SuperTenantsPage } from './pages/SuperTenantsPage';
 import { UsersPage } from './pages/UsersPage';
+import { WorkflowsPage } from './pages/WorkflowsPage';
 
 function FullPageSpinner() {
   return (
@@ -88,12 +90,14 @@ export const router = createBrowserRouter([
       { path: 'clientes', element: <ClientsPage /> },
       { path: 'produtos', element: <ProductsPage /> },
       { path: 'relatorios', element: <ReportsPage /> },
+      { path: 'monitor', element: <MonitorPage /> },
       {
         element: <RequireAdmin />,
         children: [
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
+          { path: 'fluxo-de-pedidos', element: <WorkflowsPage /> },
           { path: 'configuracoes', element: <SettingsPage /> },
         ],
       },

@@ -12,7 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { api, ApiError } from '@/lib/api';
 import { useUser } from '@/lib/auth';
 import { useDocumentTitle } from '@/lib/hooks';
-import type { ManagedUser, Role, Store } from '@/lib/types';
+import type { ManagedUser, Role, Sector, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 function UserFormDialog({
@@ -20,11 +20,13 @@ function UserFormDialog({
   onOpenChange,
   user,
   stores,
+  sectors,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user: ManagedUser | null;
   stores: Store[];
+  sectors: Sector[];
 }) {
   const queryClient = useQueryClient();
   const me = useUser();
@@ -35,6 +37,7 @@ function UserFormDialog({
   const [storeId, setStoreId] = useState('');
   const [password, setPassword] = useState('');
   const [active, setActive] = useState(true);
+  const [sectorIds, setSectorIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const isSelf = user?.id === me.id;
 
@@ -47,6 +50,7 @@ function UserFormDialog({
     setStoreId(user?.store_id ? String(user.store_id) : stores.length === 1 ? String(stores[0]!.id) : '');
     setPassword('');
     setActive(user?.active ?? true);
+    setSectorIds(user?.sector_ids ?? []);
     setError(null);
   }, [open, user, stores]);
 
@@ -61,6 +65,7 @@ function UserFormDialog({
         role,
         store_id: storeId ? Number(storeId) : null,
         password,
+        sector_ids: sectorIds,
         ...(user ? { active } : {}),
       };
       return user
@@ -70,6 +75,7 @@ function UserFormDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['stores'] });
+      queryClient.invalidateQueries({ queryKey: ['sectors'] });
       toast.success(user ? 'Usuário atualizado.' : 'Usuário criado. Passe o usuário e a senha para ele entrar.');
       onOpenChange(false);
     },
@@ -151,6 +157,29 @@ function UserFormDialog({
               </NativeSelect>
             </Field>
           </div>
+          {sectors.length > 0 && (
+            <fieldset className="grid gap-2">
+              <legend className="mb-1.5 text-sm font-medium">Setores</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {sectors.map((sector) => (
+                  <label key={sector.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={sectorIds.includes(sector.id)}
+                      onChange={(e) =>
+                        setSectorIds((current) =>
+                          e.target.checked ? [...current, sector.id] : current.filter((id) => id !== sector.id),
+                        )
+                      }
+                    />
+                    {sector.name}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[13px] text-muted-foreground">
+                Quem é do setor avança os pedidos das etapas dele. Administradores movem qualquer etapa.
+              </p>
+            </fieldset>
+          )}
           <Field
             label={user ? 'Nova senha' : 'Senha'}
             htmlFor="usuario-senha"
@@ -197,6 +226,15 @@ export function UsersPage() {
     queryKey: ['stores'],
     queryFn: () => api<{ items: Store[] }>('/stores').then((r) => r.items),
   });
+  const sectors = useQuery({
+    queryKey: ['sectors'],
+    queryFn: () => api<{ items: Sector[] }>('/sectors').then((r) => r.items),
+  });
+  const sectorNames = (ids: number[]) =>
+    ids
+      .map((id) => sectors.data?.find((s) => s.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
 
   return (
     <div>
@@ -228,6 +266,7 @@ export function UsersPage() {
                 <TH>E-mail</TH>
                 <TH>Perfil</TH>
                 <TH>Loja</TH>
+                <TH>Setores</TH>
                 <TH>Situação</TH>
                 <TH className="pr-4">
                   <span className="sr-only">Ações</span>
@@ -242,6 +281,7 @@ export function UsersPage() {
                   <TD className="text-muted-foreground">{user.email ?? '—'}</TD>
                   <TD>{user.role === 'admin' ? 'Administrador' : 'Vendedor'}</TD>
                   <TD>{user.store_name ?? '-'}</TD>
+                  <TD className="text-muted-foreground">{sectorNames(user.sector_ids) || '—'}</TD>
                   <TD>
                     <Badge variant={user.active ? 'success' : 'neutral'}>{user.active ? 'Ativo' : 'Bloqueado'}</Badge>
                   </TD>
@@ -265,6 +305,7 @@ export function UsersPage() {
         onOpenChange={(open) => setEditing((current) => ({ ...current, open }))}
         user={editing.user}
         stores={stores.data ?? []}
+        sectors={sectors.data ?? []}
       />
     </div>
   );

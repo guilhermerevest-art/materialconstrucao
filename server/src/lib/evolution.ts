@@ -94,6 +94,16 @@ export function sendPdfDocument(
   );
 }
 
+/** Mensagem de texto. Endpoint da EvolutionAPI v2: POST /message/sendText/{instância}. */
+export function sendTextMessage(settings: EvolutionSettings, message: { number: string; text: string }, timeoutMs: number) {
+  return evolutionRequest(
+    settings,
+    `/message/sendText/${encodeURIComponent(settings.instance)}`,
+    { method: 'POST', body: { number: message.number, text: message.text } },
+    timeoutMs,
+  );
+}
+
 /** Estado da conexão da instância com o WhatsApp ("open" quando o celular está conectado). */
 export async function getConnectionState(settings: EvolutionSettings, timeoutMs: number): Promise<string> {
   const data = (await evolutionRequest(

@@ -20,6 +20,7 @@ import {
 const MAIN_NAV = [
   { to: '/', label: 'Início', end: true },
   { to: '/pedidos', label: 'Pedidos', end: false },
+  { to: '/monitor', label: 'Monitor', end: false },
   { to: '/clientes', label: 'Clientes', end: false },
   { to: '/produtos', label: 'Produtos', end: false },
   { to: '/relatorios', label: 'Relatórios', end: false },
@@ -29,6 +30,7 @@ const ADMIN_NAV = [
   { to: '/lojas', label: 'Lojas' },
   { to: '/vendedores', label: 'Vendedores' },
   { to: '/formas-de-pagamento', label: 'Formas de pagamento' },
+  { to: '/fluxo-de-pedidos', label: 'Fluxo de pedidos' },
   { to: '/configuracoes', label: 'Configurações' },
 ];
 

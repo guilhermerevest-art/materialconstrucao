@@ -133,6 +133,42 @@ entre lojas, tanto na API quanto direto no banco (RLS).
   Cartão de débito, Cartão de crédito e Boleto. O pedido guarda o nome da forma da época, e forma usada
   em pedidos não pode ser excluída, só desativada (sai da lista, mas o orçamento que já a tinha continua com ela).
 
+## Fluxo de pedidos e monitores
+
+Depois de confirmado, o pedido pode percorrer etapas (ex.: Aguardando faturamento → Em separação →
+Pronto para retirada → Retirado). O administrador monta isso em **Administração → Fluxo de pedidos**;
+o botão **Começar com o fluxo sugerido** cria os setores Faturamento, Separação e Expedição e um fluxo
+para cada tipo de entrega, para ajustar depois.
+
+- **Sem fluxo configurado, nada muda:** o pedido não passa por etapas. Pedidos confirmados antes do
+  fluxo existir também ficam sem etapa, para os monitores não começarem cheios de pedidos antigos.
+- **Um fluxo por tipo de entrega:** retirada na loja (pedido sem endereço de entrega) ou entrega.
+- **Por loja, com modelo da lojamestre:** o fluxo da lojamestre vale para todas as lojas. Uma loja pode
+  **personalizar** (copia o modelo e ajusta) ou **montar um só dela**; **Usar o da lojamestre** apaga o
+  fluxo próprio e a loja volta ao modelo. Mudar o modelo não mexe no fluxo próprio das lojas.
+- **Orçamento não entra no fluxo.** O pedido entra na primeira etapa ao ser confirmado (criado como pedido,
+  convertido ou salvo como pedido), no fluxo da loja e do tipo de entrega dele naquele momento.
+- **A última etapa é a final:** o pedido que chega nela está concluído e sai dos monitores.
+- **Setores:** cada etapa pode ter um setor responsável. Só quem é do setor (marcado no cadastro do usuário)
+  avança ou devolve pedidos daquela etapa; etapa sem setor, qualquer pessoa da loja move. O administrador
+  move qualquer etapa. O vendedor continua vendo só os pedidos da própria loja.
+- **Avançar e voltar:** uma etapa por vez. Voltar aceita um motivo, que fica no histórico do pedido junto
+  com quem moveu e quando. Se duas pessoas clicam ao mesmo tempo, só o primeiro clique vale; o segundo
+  recebe aviso de que o pedido já mudou.
+- **Etapa com pedido não pode ser removida** do fluxo (nem o fluxo inteiro excluído): avance ou devolva
+  esses pedidos antes. Renomear e reordenar pode a qualquer momento; o histórico guarda os nomes da época.
+- **Prazo (min)** é o tempo esperado na etapa. No monitor, o cartão fica amarelo a partir de 75% do prazo
+  e vermelho quando passa dele.
+- **Aviso por WhatsApp:** a etapa pode ter uma mensagem enviada ao cliente quando o pedido **avança** para
+  ela (voltar não envia). Aceita `{cliente}` (primeiro nome), `{pedido}`, `{loja}` e `{etapa}`. Se o envio
+  falhar, a etapa muda do mesmo jeito e a tela avisa que o cliente não foi avisado.
+
+**Monitor** (menu principal): quadro com uma coluna por etapa em andamento, filtrado por setor (abre no
+setor da pessoa) e, para o admin, por loja. Etapas com o mesmo nome nos fluxos de retirada e de entrega
+viram uma coluna só. Atualiza sozinho a cada 10 segundos (a API é serverless na Vercel, então é consulta
+periódica e não WebSocket). **Modo TV** abre o quadro em tela cheia com letras maiores; **Som** toca um bipe
+quando chega pedido novo no quadro. O login da TV segue a regra das outras sessões e expira em 12 horas.
+
 ## Banco na VPS
 
 ### 1. SSL é obrigatório

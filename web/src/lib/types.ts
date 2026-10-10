@@ -10,7 +10,12 @@ export type User = {
   store_name: string | null;
 };
 
-export type ManagedUser = User & { active: boolean; created_at: string };
+export type ManagedUser = User & {
+  active: boolean;
+  created_at: string;
+  /** Setores do fluxo do pedido: só quem é do setor tira o pedido das etapas dele. */
+  sector_ids: number[];
+};
 
 export type Store = {
   id: number;
@@ -66,6 +71,9 @@ export type OrderSummary = {
   user_name: string;
   client_id: number;
   client_name: string;
+  /** Etapa do fluxo. Nula em orçamentos e em pedidos sem fluxo. */
+  stage_id: number | null;
+  stage_name: string | null;
 };
 
 export type OrderItem = {
@@ -111,6 +119,97 @@ export type Order = {
   store_phone: string | null;
   user_name: string;
   items: OrderItem[];
+  /** Andamento no fluxo. Nulo em orçamentos e em pedidos sem fluxo configurado. */
+  workflow: OrderWorkflow | null;
+};
+
+export type DeliveryType = 'pickup' | 'delivery';
+
+export type Sector = {
+  id: number;
+  name: string;
+  users_count: number;
+  stages_count: number;
+  created_at: string;
+};
+
+export type WorkflowStage = {
+  id: number;
+  position: number;
+  name: string;
+  sector_id: number | null;
+  /** Tempo esperado na etapa; passou disso, o cartão fica vermelho no monitor. */
+  sla_minutes: number | null;
+  /** Mensagem de WhatsApp ao cliente quando o pedido avança para a etapa. */
+  whatsapp_message: string | null;
+  /** Pedidos nesta etapa agora. Com algum, ela não pode ser removida. */
+  orders_count: number;
+};
+
+export type Workflow = {
+  id: number;
+  /** Nulo: modelo da lojamestre, usado pelas lojas sem fluxo próprio. */
+  store_id: number | null;
+  delivery_type: DeliveryType;
+  updated_at: string;
+  stages: WorkflowStage[];
+};
+
+export type StageRef = { id: number; name: string };
+
+export type StageEvent = {
+  id: number;
+  from_stage_name: string | null;
+  to_stage_name: string;
+  user_name: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type OrderWorkflow = {
+  stage_id: number;
+  stage_name: string;
+  sector_id: number | null;
+  sector_name: string | null;
+  sla_minutes: number | null;
+  entered_at: string;
+  is_final: boolean;
+  next_stage: StageRef | null;
+  previous_stage: StageRef | null;
+  can_move: boolean;
+  events: StageEvent[];
+};
+
+export type StageNotification = { status: 'sent' } | { status: 'failed'; error: string };
+
+export type MonitorOrder = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  client_name: string;
+  user_name: string;
+  total_amount: number;
+  delivery_address: string | null;
+  notes: string | null;
+  confirmed_at: string | null;
+  stage_id: number;
+  stage_name: string;
+  sector_id: number | null;
+  sla_minutes: number | null;
+  stage_entered_at: string;
+  next_stage_name: string;
+  items_count: number;
+  column: string;
+  delivery_type: DeliveryType;
+  can_move: boolean;
+};
+
+export type Monitor = {
+  /** Hora do servidor: o tempo na etapa não depende do relógio da TV. */
+  now: string;
+  my_sector_ids: number[];
+  columns: { key: string; name: string }[];
+  orders: MonitorOrder[];
 };
 
 export type Paginated<T> = {

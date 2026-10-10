@@ -5,12 +5,25 @@ import { currentUser, requireAdmin, type AuthUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
-import { describeEvolutionError, keySourceOf, loadEvolutionSettings, sendPdfDocument } from '../lib/evolution.js';
+import {
+  describeEvolutionError,
+  keySourceOf,
+  loadEvolutionSettings,
+  sendPdfDocument,
+  sendTextMessage,
+} from '../lib/evolution.js';
 import { documentLabel, formatMoney, formatOrderNumber } from '../lib/format.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, optionalQueryId, optionalText, pagination, parseId } from '../lib/validation.js';
 import { loadOrderDetail, writeOrderItems, type OrderDetail } from '../orders/queries.js';
 import { orderFileName, renderOrderPdf } from '../pdf/orderPdf.js';
+import {
+  enterWorkflow,
+  loadOrderWorkflow,
+  moveOrderStage,
+  renderStageMessage,
+  type EnteredStage,
+} from '../workflow/queries.js';
 
 const itemSchema = z.object({
   product_id: z.number().int().positive(),
@@ -69,7 +82,28 @@ const listSchema = z.object({
   ...pagination,
 });
 
+const moveSchema = z.object({
+  direction: z.enum(['next', 'previous'], 'Direção inválida.'),
+  expected_stage_id: z.number().int().positive(),
+  note: optionalText(300),
+});
+
 const NOT_FOUND = 'Pedido não encontrado.';
+
+/** Aviso ao cliente quando o pedido entra numa etapa com mensagem. Falhar não desfaz a mudança de etapa. */
+type StageNotification = { status: 'sent' } | { status: 'failed'; error: string };
+
+/** Pedido como a tela mostra: com a etapa do fluxo e o histórico. O PDF não precisa disso. */
+async function loadOrderView(db: pg.PoolClient, id: number, user: AuthUser) {
+  const order = await loadOrderDetail(db, id);
+  if (!order) return null;
+  return { ...order, workflow: await loadOrderWorkflow(db, id, user) };
+}
+
+/** WhatsApp do cliente pronto para a EvolutionAPI. Só números antigos ou importados precisam de ajuste. */
+function clientNumber(order: OrderDetail) {
+  return /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
+}
 
 /** Admin escolhe a loja (padrão: a dele); vendedor sempre lança na própria loja. */
 function resolveStoreId(user: AuthUser, requested: number | null | undefined): number {
@@ -119,6 +153,29 @@ export function ordersRouter(ctx: AppContext) {
   const router = Router();
   const { pool, config } = ctx;
 
+  async function notifyStageEntry(user: AuthUser, order: OrderDetail, stage: EnteredStage): Promise<StageNotification | null> {
+    if (!stage.whatsapp_message) return null;
+    const settings = await withSession(pool, user, (db) => loadEvolutionSettings(db, user.tenant_id));
+    if (!settings) {
+      return { status: 'failed', error: 'O WhatsApp da loja não está configurado, então o cliente não foi avisado.' };
+    }
+    const number = clientNumber(order);
+    if (!number) return { status: 'failed', error: 'O WhatsApp do cliente é inválido, então ele não foi avisado.' };
+    const text = renderStageMessage(stage.whatsapp_message, {
+      clientName: order.client_name,
+      orderId: order.id,
+      storeName: order.store_name,
+      stageName: stage.name,
+    });
+    try {
+      await sendTextMessage(settings, { number, text }, config.evolutionTimeoutMs);
+      return { status: 'sent' };
+    } catch (err) {
+      console.error(`Falha ao avisar o cliente do pedido ${order.id} pela EvolutionAPI:`, err);
+      return { status: 'failed', error: describeEvolutionError(err, keySourceOf(settings, config.evolutionServer)) };
+    }
+  }
+
   router.get('/', async (req, res) => {
     const user = currentUser(req);
     const query = listSchema.parse(req.query);
@@ -148,12 +205,13 @@ export function ordersRouter(ctx: AppContext) {
       const { rows } = await db.query(
         `select o.id, o.status, o.total_amount, o.created_at, o.confirmed_at, o.sent_at,
                 o.store_id, s.name as store_name, o.user_id, u.name as user_name,
-                o.client_id, c.name as client_name,
+                o.client_id, c.name as client_name, o.stage_id, ws.name as stage_name,
                 count(*) over () as total_count
            from orders o
            join clients c on c.id = o.client_id
            join stores s on s.id = o.store_id
            join users u on u.id = o.user_id
+           left join workflow_stages ws on ws.id = o.stage_id
           ${where.length ? `where ${where.join(' and ')}` : ''}
           order by o.created_at desc, o.id desc
           limit ${limit} offset ${offset}`,
@@ -172,7 +230,8 @@ export function ordersRouter(ctx: AppContext) {
 
   router.get('/:id', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), (db) => loadOrderDetail(db, id));
+    const user = currentUser(req);
+    const order = await withSession(pool, user, (db) => loadOrderView(db, id, user));
     if (!order) throw new HttpError(404, NOT_FOUND);
     res.json({ order });
   });
@@ -207,7 +266,8 @@ export function ordersRouter(ctx: AppContext) {
       );
       const id = rows[0]!.id;
       await writeOrderItems(db, id, body.items);
-      return loadOrderDetail(db, id);
+      if (body.status === 'order') await enterWorkflow(db, id, user.id);
+      return loadOrderView(db, id, user);
     });
     res.status(201).json({ order });
   });
@@ -257,14 +317,16 @@ export function ordersRouter(ctx: AppContext) {
         ],
       );
       await writeOrderItems(db, id, body.items, new Map(previous.rows.map((r) => [r.product_id, r.unit_price])));
-      return loadOrderDetail(db, id);
+      if (body.status === 'order') await enterWorkflow(db, id, user.id);
+      return loadOrderView(db, id, user);
     });
     res.json({ order });
   });
 
   router.post('/:id/convert', async (req, res) => {
     const id = parseId(req.params.id, NOT_FOUND);
-    const order = await withSession(pool, currentUser(req), async (db) => {
+    const user = currentUser(req);
+    const order = await withSession(pool, user, async (db) => {
       const { rowCount } = await db.query(
         `update orders set status = 'order', confirmed_at = now(), updated_at = now()
           where id = $1 and status = 'quote'`,
@@ -275,9 +337,24 @@ export function ordersRouter(ctx: AppContext) {
         if (!exists.rowCount) throw new HttpError(404, NOT_FOUND);
         throw new HttpError(409, 'Este documento já é um pedido.');
       }
-      return loadOrderDetail(db, id);
+      await enterWorkflow(db, id, user.id);
+      return loadOrderView(db, id, user);
     });
     res.json({ order });
+  });
+
+  /** Avança o pedido para a próxima etapa do fluxo ou devolve para a anterior. */
+  router.post('/:id/stage', async (req, res) => {
+    const user = currentUser(req);
+    const id = parseId(req.params.id, NOT_FOUND);
+    const body = moveSchema.parse(req.body);
+    const { order, entered } = await withSession(pool, user, async (db) => {
+      const entered = await moveOrderStage(db, id, user, body);
+      return { order: (await loadOrderView(db, id, user))!, entered };
+    });
+    // Depois do commit: a mudança de etapa vale mesmo se o WhatsApp falhar.
+    const notification = body.direction === 'next' ? await notifyStageEntry(user, order, entered) : null;
+    res.json({ order, notification });
   });
 
   router.delete('/:id', requireAdmin, async (req, res) => {
@@ -315,8 +392,7 @@ export function ordersRouter(ctx: AppContext) {
         'WHATSAPP_NOT_CONFIGURED',
       );
     }
-    // O número é guardado normalizado; só números antigos ou importados precisam de ajuste.
-    const number = /^\d{8,15}$/.test(order.client_whatsapp) ? order.client_whatsapp : normalizeWhatsapp(order.client_whatsapp);
+    const number = clientNumber(order);
     if (!number) {
       throw new HttpError(
         422,

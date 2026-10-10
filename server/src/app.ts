@@ -11,14 +11,17 @@ import { errorHandler } from './errors.js';
 import { authRouter } from './routes/auth.js';
 import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
+import { monitorRouter } from './routes/monitor.js';
 import { ordersRouter } from './routes/orders.js';
 import { paymentMethodsRouter } from './routes/paymentMethods.js';
 import { productsRouter } from './routes/products.js';
 import { reportsRouter } from './routes/reports.js';
+import { sectorsRouter } from './routes/sectors.js';
 import { settingsRouter } from './routes/settings.js';
 import { storesRouter } from './routes/stores.js';
 import { superRouter } from './routes/super.js';
 import { usersRouter } from './routes/users.js';
+import { workflowsRouter } from './routes/workflows.js';
 
 // Mensagens padrão de validação em português.
 z.config(z.locales.ptBR());
@@ -55,6 +58,9 @@ export function createApp(ctx: AppContext) {
   api.use('/orders', ordersRouter(ctx));
   api.use('/payment-methods', paymentMethodsRouter(ctx));
   api.use('/reports', reportsRouter(ctx));
+  api.use('/sectors', sectorsRouter(ctx));
+  api.use('/monitor', monitorRouter(ctx));
+  api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));
   api.use('/settings', requireAdmin, settingsRouter(ctx));
