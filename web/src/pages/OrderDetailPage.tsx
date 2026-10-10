@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCheck, CheckCircle2, Download, FileCheck2, Pencil, Tras
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { OrderFiscalCard } from '@/components/fiscal/OrderFiscalCard';
 import { DiscountBreakdown, EmptyState, PriceTag, StatusBadge, WhatsAppIcon } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -284,6 +285,8 @@ export function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <OrderFiscalCard order={order} />
         </aside>
       </div>
 

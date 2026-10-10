@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, PlugZap, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, PlugZap, Receipt, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
+import { FiscalSettingsForm } from '@/components/fiscal/FiscalSettingsForm';
 import { PageHeader, WhatsAppIcon } from '@/components/shared';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/input';
 import { Alert, Skeleton } from '@/components/ui/misc';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
@@ -21,6 +24,36 @@ const STATE_MESSAGES: Record<string, { ok: boolean; text: string }> = {
 
 export function SettingsPage() {
   useDocumentTitle('Configurações');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // A aba vai na URL: as mensagens de "configure em Configurações → Fiscal" levam direto para ela.
+  const tab = searchParams.get('aba') === 'fiscal' ? 'fiscal' : 'whatsapp';
+
+  return (
+    <div className="max-w-4xl">
+      <PageHeader title="Configurações" />
+      <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'fiscal' ? { aba: 'fiscal' } : {}, { replace: true })}>
+        <TabsList className="mb-2">
+          <TabsTrigger value="whatsapp">
+            <WhatsAppIcon className="size-4" />
+            WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="fiscal">
+            <Receipt />
+            Fiscal (dados da empresa)
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="whatsapp">
+          <WhatsAppSettings />
+        </TabsContent>
+        <TabsContent value="fiscal">
+          <FiscalSettingsForm />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function WhatsAppSettings() {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState('');
   const [instance, setInstance] = useState('');
@@ -144,8 +177,6 @@ export function SettingsPage() {
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Configurações" />
-
       <Card>
         <CardHeader className="items-start">
           <div className="flex items-start gap-3">

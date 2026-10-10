@@ -178,6 +178,8 @@ do build. Deploys de preview não mexem no banco.
    - `JWT_SECRET` (aleatório, 32+ caracteres; diferente do local)
    - `APP_TIMEZONE=America/Sao_Paulo`
    - `DATABASE_CA_CERT`, se usar `verify-ca`/`verify-full`
+   - `ACBR_CLIENT_ID` e `ACBR_CLIENT_SECRET`, para a emissão fiscal pela conta da plataforma (opcional;
+     veja [Módulo fiscal](#módulo-fiscal-acbr-api))
 3. **Região:** a função roda em `gru1` (São Paulo). Cada tela faz algumas consultas
    ao banco em sequência; se a VPS estiver em outra região, troque `regions` no
    `vercel.json` pela região mais próxima dela.
@@ -209,6 +211,83 @@ nem para o navegador. Quem tem servidor próprio ainda pode preencher os dados �
 A chave nunca volta inteira para o navegador. Se o envio falhar, o vendedor vê o motivo
 e um botão para baixar o PDF e mandar manualmente.
 
+## Módulo fiscal (ACBr API)
+
+Emissão de **NF-e** (modelo 55) e **NFC-e** (modelo 65) a partir dos pedidos e **monitor das notas
+recebidas** de fornecedores, tudo pela [ACBr API](https://dev.acbr.api.br/docs/api) (REST, OAuth2
+`client_credentials`). A ACBr API assina com o certificado, transmite para a SEFAZ, guarda o XML e
+gera o DANFE; aqui fica só o que a tela precisa para listar, numerar e chegar ao documento de lá.
+
+### Configuração
+
+1. **Conta na ACBr API.** Defina `ACBR_CLIENT_ID` e `ACBR_CLIENT_SECRET` (conta da plataforma) na
+   Vercel, ou deixe cada lojamestre informar a própria conta em Configurações → Fiscal. O
+   `client_secret` nunca volta para o navegador.
+2. **Administração → Configurações → aba Fiscal**: CNPJ (o botão de busca preenche pela Receita),
+   razão social, IE, regime tributário (CRT), endereço com código IBGE (o CEP preenche), série e
+   próximo número da NF-e e da NFC-e, CSC da NFC-e e o ambiente. **Salvar** grava e já envia o
+   cadastro para a ACBr API (`/empresas`, configurações de NF-e, NFC-e e distribuição).
+3. **Certificado A1** (.pfx/.p12) na mesma aba. Ele vai direto para a ACBr API; o arquivo e a senha
+   não ficam no banco, só o titular e a validade (a tela avisa 30 dias antes de vencer).
+4. Comece em **homologação**: as notas saem com "SEM VALOR FISCAL" e não contam na SEFAZ. Ao passar
+   para produção, acerte o próximo número para continuar a sequência que a empresa já usa.
+
+Na conta da plataforma, o CNPJ é o que separa as empresas dentro da ACBr API: o mesmo CNPJ não pode
+estar em duas lojamestres.
+
+### Cadastros
+
+- **Produto → aba Fiscal**: NCM (obrigatório na nota), CEST, GTIN (vazio = `SEM GTIN`), CFOP
+  (vazio = 5102, ou 5405 com ST), origem, CSOSN (Simples) ou CST (regime normal) com alíquotas,
+  PIS/COFINS (no Simples, em branco sai CST 49), IBS/CBS (regime normal) e cBenef. A lista de produtos
+  marca "Sem NCM" para o admin achar o que falta.
+- **Cliente → aba Cadastro completo**: pessoa física/jurídica, CPF/CNPJ (com dígito verificador; o
+  CNPJ alfanumérico de 2026 é aceito), IE e indicador, consumidor final, e-mail e endereço com código
+  IBGE. A busca de clientes também acha pelo CPF/CNPJ.
+
+### Emissão
+
+No detalhe de um **pedido confirmado**, o quadro **Nota fiscal** emite a NFC-e (balcão) ou a NF-e.
+O servidor monta a nota com os dados do banco (itens, preços e desconto do pedido, rateado entre os
+itens ao centavo), nunca com o que vem do navegador.
+
+- Cadastro incompleto devolve a **lista do que falta** (empresa, cliente, cada produto) com atalho
+  para corrigir, e o número não é gasto.
+- O número é reservado na mesma transação da nota: duas emissões ao mesmo tempo não repetem número, e
+  um pedido só tem uma nota em aberto (índice único no banco).
+- **Rejeitada** ou com **erro**: corrija o cadastro e use **Reenviar**, com o mesmo número (a SEFAZ não
+  consome o número de nota rejeitada). Envio sem resposta é conferido pela referência antes de
+  reenviar, para não mandar em dobro. Se o pedido não vai mais ter nota, o admin **inutiliza o número**.
+- **Cancelar** é do admin, com justificativa (15 a 255 caracteres). Cancelada ou inutilizada, o pedido
+  aceita outra nota. Pedido com nota não pode ser excluído.
+- O vendedor emite e consulta as notas da própria loja (RLS, como os pedidos); o admin vê a rede em
+  **Fiscal → Notas emitidas**, com DANFE e XML.
+
+### Monitor de notas recebidas
+
+**Fiscal → Notas recebidas** (admin) lista as NF-e emitidas contra o CNPJ da empresa, trazidas pela
+distribuição DF-e da SEFAZ. A ACBr API consulta a SEFAZ sozinha a cada poucas horas (configurável); a
+tela lê o que já chegou ao abrir, e **Buscar na SEFAZ agora** pede uma consulta na hora (a SEFAZ limita
+a uma por hora quando não há nada novo). **Consultar por chave** traz uma nota específica.
+
+Primeiro chega o **resumo**. Dar **ciência da operação** libera a nota completa (DANFE e XML) na
+próxima busca; depois o admin confirma, desconhece ou registra "operação não realizada"
+(com justificativa). Também dá para ligar a ciência automática. Notas canceladas pelo emitente ficam
+marcadas.
+
+### Limitações desta versão
+
+- Venda interestadual para consumidor final não contribuinte (DIFAL) e interestadual no regime normal
+  (alíquota interestadual do ICMS) são recusadas com aviso; venda dentro da UF e interestadual para
+  contribuinte no Simples funcionam.
+- ICMS: CSOSN 101, 102, 103, 300, 400, 500 e 900; CST 00, 20, 40, 41, 50 e 60. Sem ICMS-ST próprio
+  (CST 10/70), IPI e FCP.
+- IBS/CBS: CST 000, 400 e 410, com as alíquotas do período de teste (2026) definidas em Configurações.
+- A forma de pagamento vira o código da SEFAZ pelo nome (Dinheiro, PIX, Cartão de crédito/débito,
+  Boleto, Crediário...); o que não for reconhecido sai como 99 (outros).
+- Os dados da empresa são da lojamestre inteira: lojas com CNPJ próprio (filiais) ainda não emitem
+  cada uma com o seu.
+
 ## Estrutura
 
 ```text
@@ -216,9 +295,12 @@ api/index.ts            entrada da Serverless Function (Vercel)
 server/migrations/      SQL versionado (schema, RLS)
 server/src/app.ts       app Express e rotas
 server/src/routes/      auth, lojas, usuários, clientes, produtos, pedidos, configurações, painel
+server/src/fiscal/      módulo fiscal: cliente da ACBr API, montagem da NF-e/NFC-e, rotas de emissão e monitor
 server/src/pdf/         layout A4 do pedido
 server/src/lib/         EvolutionAPI, telefone, formatação, limite de login
 server/test/            testes (Vitest + Supertest)
 web/src/pages/          telas
 web/src/components/pdv/ busca de cliente, busca de produto e carrinho do PDV
+web/src/pages/fiscal/   notas emitidas e monitor de notas recebidas
+web/src/components/fiscal/ dados da empresa, nota do pedido, endereço com busca de CEP
 ```

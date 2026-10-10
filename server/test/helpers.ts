@@ -25,6 +25,8 @@ export function testConfig(databaseUrl: string): Config {
     timeZone: 'America/Sao_Paulo',
     evolutionTimeoutMs: 3_000,
     webDistDir: '/caminho/inexistente',
+    // Endereço que não responde: os testes do módulo fiscal trocam pela ACBr API falsa.
+    acbr: { url: 'http://127.0.0.1:9', authUrl: 'http://127.0.0.1:9/token', scope: 'empresa nfe cep cnpj', timeoutMs: 3_000 },
   };
 }
 
@@ -171,6 +173,65 @@ export async function startFakeEvolution() {
     },
     route(method: string, path: string, nextStatus: number, body: unknown) {
       routes.set(`${method} ${path}`, { status: nextStatus, body });
+    },
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+type FakeResponse = { status: number; body: unknown; contentType?: string };
+
+/**
+ * ACBr API de mentira: token OAuth2 em /token e rotas configuráveis. Registra as
+ * requisições (o corpo do token chega em form-urlencoded e fica como texto).
+ */
+export async function startFakeAcbr() {
+  const requests: CapturedRequest[] = [];
+  const routes = new Map<string, FakeResponse | ((req: CapturedRequest) => FakeResponse)>();
+  let tokenCount = 0;
+
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      let body: unknown = raw || null;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch {
+        // form-urlencoded do token
+      }
+      const url = req.url ?? '';
+      const captured = { method: req.method ?? '', url, headers: req.headers, body };
+      requests.push(captured);
+      if (req.method === 'POST' && url === '/token') {
+        tokenCount += 1;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ access_token: `token-${tokenCount}`, expires_in: 3600, token_type: 'Bearer' }));
+        return;
+      }
+      const path = url.split('?')[0];
+      const route = routes.get(`${req.method} ${url}`) ?? routes.get(`${req.method} ${path}`);
+      const reply = typeof route === 'function' ? route(captured) : (route ?? { status: 404, body: { error: { message: 'Rota não simulada' } } });
+      const isBuffer = Buffer.isBuffer(reply.body);
+      res.writeHead(reply.status, { 'Content-Type': reply.contentType ?? (isBuffer ? 'application/octet-stream' : 'application/json') });
+      res.end(isBuffer ? reply.body : JSON.stringify(reply.body));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}`;
+
+  return {
+    url,
+    config: { url, authUrl: `${url}/token`, scope: 'empresa nfe cep cnpj', timeoutMs: 3_000 },
+    requests,
+    /** Requisições à API (sem as de token). */
+    calls: () => requests.filter((r) => r.url !== '/token'),
+    route(method: string, path: string, reply: FakeResponse | ((req: CapturedRequest) => FakeResponse)) {
+      routes.set(`${method} ${path}`, reply);
+    },
+    reset() {
+      requests.length = 0;
+      routes.clear();
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

@@ -6,6 +6,7 @@ import { HttpError } from '../errors.js';
 import { queryAs, withSession } from '../db/session.js';
 import { normalizeWhatsapp } from '../lib/phone.js';
 import { likePattern, optionalQuery, pagination, parseId } from '../lib/validation.js';
+import { clientDetailsSchema, type ClientDetailsInput } from '../fiscal/validation.js';
 
 const clientSchema = z.object({
   name: z.string().trim().min(2, 'Informe o nome do cliente.').max(150),
@@ -21,16 +22,64 @@ const clientSchema = z.object({
       }
       return normalized;
     }),
+  // Aba "Cadastro completo" (dados da NF-e). Ausente, mantém o que está salvo.
+  details: clientDetailsSchema.optional(),
 });
+
+const DETAIL_COLUMNS = [
+  'person_type',
+  'document',
+  'trade_name',
+  'state_registration',
+  'ie_indicator',
+  'final_consumer',
+  'email',
+  'phone',
+  'address_zip',
+  'address_street',
+  'address_number',
+  'address_complement',
+  'address_district',
+  'address_city',
+  'address_city_code',
+  'address_state',
+] as const satisfies readonly (keyof ClientDetailsInput)[];
+
+const CLIENT_COLUMNS = `id, name, whatsapp, created_at, ${DETAIL_COLUMNS.join(', ')}`;
 
 const listSchema = z.object({ q: optionalQuery, ...pagination });
 
 const NOT_FOUND = 'Cliente não encontrado.';
 
-type ClientRow = { id: number; name: string; whatsapp: string; created_at: Date };
+type ClientRow = { id: number; name: string; whatsapp: string; created_at: Date } & Record<string, unknown>;
+
+/** O cadastro completo vai agrupado em `details`, como a tela edita (aba própria). */
+function toClient(row: Record<string, unknown>) {
+  const client: Record<string, unknown> = {};
+  const details: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if ((DETAIL_COLUMNS as readonly string[]).includes(key)) details[key] = value;
+    else client[key] = value;
+  }
+  return { ...client, details };
+}
+
+/** Colunas e valores a gravar: nome e WhatsApp sempre, o cadastro completo só quando veio. */
+function writableColumns(body: z.infer<typeof clientSchema>) {
+  const columns: string[] = ['name', 'whatsapp'];
+  const values: unknown[] = [body.name, body.whatsapp];
+  if (body.details) {
+    for (const column of DETAIL_COLUMNS) {
+      columns.push(column);
+      values.push(body.details[column]);
+    }
+  }
+  return { columns, values };
+}
 
 /** Um WhatsApp pertence a um único cliente. ignoreId ignora o próprio cliente na edição. */
 async function findWhatsappConflicts(ctx: AppContext, user: { id: number; tenant_id: number; role: 'admin' | 'seller'; store_id: number | null }, whatsapp: string, ignoreId: number | null) {
+  // Só o básico: o aviso de duplicado não expõe o cadastro completo de outro cliente.
   const { rows } = await queryAs<ClientRow>(ctx.pool, user,
     `select id, name, whatsapp, created_at
        from clients
@@ -42,7 +91,7 @@ async function findWhatsappConflicts(ctx: AppContext, user: { id: number; tenant
   return rows;
 }
 
-function duplicateWhatsapp(conflicts: ClientRow[]): HttpError {
+function duplicateWhatsapp(conflicts: unknown[]): HttpError {
   return new HttpError(409, 'Este WhatsApp já está cadastrado.', 'whatsapp_duplicado', { conflicts });
 }
 
@@ -79,17 +128,18 @@ export function clientsRouter(ctx: AppContext) {
     const { q, page, page_size } = listSchema.parse(req.query);
     const digits = q?.replace(/\D/g, '') ?? '';
     const { rows } = await queryAs(ctx.pool, me,
-      `select id, name, whatsapp, created_at, count(*) over () as total_count
+      `select ${CLIENT_COLUMNS}, count(*) over () as total_count
          from clients
         where $1::text is null
            or search_norm(name) like search_norm($1)
-           or ($2::text is not null and whatsapp like $2)
+           or search_norm(trade_name) like search_norm($1)
+           or ($2::text is not null and (whatsapp like $2 or document like $2))
         order by name, id
         limit $3 offset $4`,
       [q ? likePattern(q) : null, digits.length >= 3 ? likePattern(digits) : null, page_size, (page - 1) * page_size],
     );
     res.json({
-      items: rows.map(({ total_count: _, ...row }) => row),
+      items: rows.map(({ total_count: _, ...row }) => toClient(row)),
       total: rows[0]?.total_count ?? 0,
       page,
       page_size,
@@ -99,10 +149,9 @@ export function clientsRouter(ctx: AppContext) {
   router.get('/:id', async (req, res) => {
     const me = currentUser(req);
     const id = parseId(req.params.id, NOT_FOUND);
-    const { rows } = await queryAs(ctx.pool, me,
-      'select id, name, whatsapp, created_at from clients where id = $1', [id]);
+    const { rows } = await queryAs(ctx.pool, me, `select ${CLIENT_COLUMNS} from clients where id = $1`, [id]);
     if (!rows[0]) throw new HttpError(404, NOT_FOUND);
-    res.json({ client: rows[0] });
+    res.json({ client: toClient(rows[0]) });
   });
 
   router.post('/', async (req, res) => {
@@ -110,20 +159,23 @@ export function clientsRouter(ctx: AppContext) {
     const body = clientSchema.parse(req.body);
     const conflicts = await findWhatsappConflicts(ctx, me, body.whatsapp, null);
     if (conflicts.length) throw duplicateWhatsapp(conflicts);
+    const { columns, values } = writableColumns(body);
     const { rows } = await writeClient(
       ctx,
       me,
       () =>
         withSession(ctx.pool, me, (db) =>
-          db.query(
-            'insert into clients (tenant_id, name, whatsapp) values ($1, $2, $3) returning id, name, whatsapp, created_at',
-            [me.tenant_id, body.name, body.whatsapp],
+          db.query<ClientRow>(
+            `insert into clients (tenant_id, ${columns.join(', ')})
+             values ($1, ${columns.map((_, i) => `$${i + 2}`).join(', ')})
+             returning ${CLIENT_COLUMNS}`,
+            [me.tenant_id, ...values],
           ),
         ),
       body.whatsapp,
       null,
     );
-    res.status(201).json({ client: rows[0] });
+    res.status(201).json({ client: toClient(rows[0]!) });
   });
 
   router.put('/:id', async (req, res) => {
@@ -137,21 +189,24 @@ export function clientsRouter(ctx: AppContext) {
 
     const conflicts = await findWhatsappConflicts(ctx, me, body.whatsapp, id);
     if (conflicts.length) throw duplicateWhatsapp(conflicts);
+    const { columns, values } = writableColumns(body);
     const { rows } = await writeClient(
       ctx,
       me,
       () =>
         withSession(ctx.pool, me, (db) =>
-          db.query(
-            'update clients set name = $2, whatsapp = $3 where id = $1 returning id, name, whatsapp, created_at',
-            [id, body.name, body.whatsapp],
+          db.query<ClientRow>(
+            `update clients set ${columns.map((c, i) => `${c} = $${i + 2}`).join(', ')}
+              where id = $1
+             returning ${CLIENT_COLUMNS}`,
+            [id, ...values],
           ),
         ),
       body.whatsapp,
       id,
     );
     if (!rows[0]) throw new HttpError(404, NOT_FOUND);
-    res.json({ client: rows[0] });
+    res.json({ client: toClient(rows[0]) });
   });
 
   router.delete('/:id', requireAdmin, async (req, res) => {

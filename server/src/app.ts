@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { authenticate, requireAdmin } from './auth.js';
 import type { AppContext } from './context.js';
 import { errorHandler } from './errors.js';
+import { fiscalRouter } from './fiscal/index.js';
 import { authRouter } from './routes/auth.js';
 import { clientsRouter } from './routes/clients.js';
 import { dashboardRouter } from './routes/dashboard.js';
@@ -55,6 +56,7 @@ export function createApp(ctx: AppContext) {
   api.use('/orders', ordersRouter(ctx));
   api.use('/payment-methods', paymentMethodsRouter(ctx));
   api.use('/reports', reportsRouter(ctx));
+  api.use('/fiscal', fiscalRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));
   api.use('/settings', requireAdmin, settingsRouter(ctx));

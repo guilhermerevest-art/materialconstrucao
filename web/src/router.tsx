@@ -4,6 +4,8 @@ import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { FiscalDocumentsPage } from './pages/fiscal/FiscalDocumentsPage';
+import { FiscalInboundPage } from './pages/fiscal/FiscalInboundPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
@@ -88,9 +90,11 @@ export const router = createBrowserRouter([
       { path: 'clientes', element: <ClientsPage /> },
       { path: 'produtos', element: <ProductsPage /> },
       { path: 'relatorios', element: <ReportsPage /> },
+      { path: 'fiscal', element: <FiscalDocumentsPage /> },
       {
         element: <RequireAdmin />,
         children: [
+          { path: 'fiscal/recebidas', element: <FiscalInboundPage /> },
           { path: 'lojas', element: <StoresPage /> },
           { path: 'vendedores', element: <UsersPage /> },
           { path: 'formas-de-pagamento', element: <PaymentMethodsPage /> },
