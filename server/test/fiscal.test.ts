@@ -2,9 +2,11 @@ import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { hashPassword } from '../src/auth.js';
 import { clearAcbrTokenCache } from '../src/fiscal/acbr.js';
 import {
   login,
+  PASSWORD,
   resetDatabase,
   seedFixtures,
   setupApp,
@@ -17,14 +19,17 @@ import {
 const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
 
 const CNPJ = '11222333000181';
+/** Conta da lojamestre dos fixtures na ACBr API. Cada lojamestre tem a sua. */
+const CLIENT_ID = 'conta-parceiro';
+const CLIENT_SECRET = 'segredo-do-parceiro';
 const ACCESS_KEY = '35261011222333000181650010000000011000000019';
 
 type Agent = ReturnType<typeof request.agent>;
 
 const companyBody = {
   environment: 'homologacao',
-  acbr_client_id: '',
-  acbr_client_secret: '',
+  acbr_client_id: CLIENT_ID,
+  acbr_client_secret: CLIENT_SECRET,
   cnpj: '11.222.333/0001-81',
   legal_name: 'Material de Construção Exemplo LTDA',
   trade_name: 'Casa do Construtor',
@@ -121,11 +126,8 @@ describeDb('módulo fiscal (ACBr API)', () => {
   beforeAll(async () => {
     ({ pool, adminPool } = setupApp(TEST_DATABASE_URL!));
     acbr = await startFakeAcbr();
-    // Conta da plataforma: a lojamestre só cadastra a empresa e o certificado.
-    app = createApp({
-      pool,
-      config: { ...testConfig(TEST_DATABASE_URL!), acbr: { ...acbr.config, platform: { clientId: 'plataforma', clientSecret: 'segredo' } } },
-    });
+    acbr.registerClient(CLIENT_ID, CLIENT_SECRET);
+    app = createApp({ pool, config: { ...testConfig(TEST_DATABASE_URL!), acbr: acbr.config } });
   });
 
   afterAll(async () => {
@@ -201,7 +203,8 @@ describeDb('módulo fiscal (ACBr API)', () => {
         address_zip: '01001000',
         nfce_csc_hint: '••••3456',
         has_nfce_csc: true,
-        acbr_platform_available: true,
+        acbr_client_id: CLIENT_ID,
+        acbr_client_secret_hint: '••••eiro',
         acbr_configured: true,
         certificate_subject: 'CN=EXEMPLO LTDA:11222333000181',
       });
@@ -209,6 +212,7 @@ describeDb('módulo fiscal (ACBr API)', () => {
       expect(settings.company_synced_at).toBeTruthy();
       // O CSC e os segredos nunca voltam inteiros.
       expect(JSON.stringify(settings)).not.toContain('CSC-DE-TESTE-123456');
+      expect(JSON.stringify(settings)).not.toContain(CLIENT_SECRET);
 
       const calls = acbr.calls().map((c) => `${c.method} ${c.url}`);
       expect(calls).toEqual([
@@ -220,7 +224,7 @@ describeDb('módulo fiscal (ACBr API)', () => {
         `PUT /empresas/${CNPJ}/certificado`,
       ]);
       const empresa = acbr.calls().find((c) => c.url === '/empresas')!;
-      expect(empresa.headers.authorization).toBe('Bearer token-1');
+      expect(empresa.account).toBe(CLIENT_ID);
       expect(empresa.body).toMatchObject({
         cpf_cnpj: CNPJ,
         nome_razao_social: 'Material de Construção Exemplo LTDA',
@@ -232,9 +236,10 @@ describeDb('módulo fiscal (ACBr API)', () => {
         ambiente: 'homologacao',
         sefaz: { id_csc: 1, csc: 'CSC-DE-TESTE-123456' },
       });
-      // Um único token para todas as chamadas.
+      // Um único token, da conta da lojamestre, para todas as chamadas.
       expect(acbr.requests.filter((r) => r.url === '/token')).toHaveLength(1);
-      expect(String(acbr.requests[0]!.body)).toContain('client_id=plataforma');
+      expect(String(acbr.requests[0]!.body)).toContain(`client_id=${CLIENT_ID}`);
+      expect(new Set(acbr.calls().map((c) => c.account))).toEqual(new Set([CLIENT_ID]));
     });
 
     it('recusa CNPJ inválido e município de outra UF', async () => {
@@ -252,6 +257,108 @@ describeDb('módulo fiscal (ACBr API)', () => {
       expect((await seller.get('/api/fiscal/settings')).status).toBe(403);
       expect((await seller.put('/api/fiscal/settings').send(companyBody)).status).toBe(403);
       expect((await seller.get('/api/fiscal/inbound')).status).toBe(403);
+    });
+  });
+
+  describe('conta da ACBr API por lojamestre', () => {
+    /** Segunda lojamestre, com loja e admin próprios. */
+    async function createOtherTenant() {
+      const tenant = await adminPool.query<{ id: number }>(
+        `insert into tenants (slug, name) values ('outra', 'Outra lojamestre') returning id`,
+      );
+      const tid = tenant.rows[0]!.id;
+      await adminPool.query('insert into settings (tenant_id) values ($1)', [tid]);
+      const store = await adminPool.query<{ id: number }>(
+        `insert into stores (tenant_id, name) values ($1, 'Loja da outra') returning id`,
+        [tid],
+      );
+      await adminPool.query(
+        `insert into users (tenant_id, name, username, password_hash, role, store_id)
+         values ($1, 'Admin da outra', 'admin', $2, 'admin', $3)`,
+        [tid, await hashPassword(PASSWORD), store.rows[0]!.id],
+      );
+      const agent = request.agent(app);
+      const res = await agent.post('/api/auth/login').send({ tenant_slug: 'outra', username: 'admin', password: PASSWORD });
+      expect(res.status).toBe(200);
+      return agent;
+    }
+
+    const otherCompany = { ...companyBody, cnpj: '12.345.678/0001-95', legal_name: 'Outra Empresa LTDA' };
+
+    it('cada lojamestre usa a própria conta; o client_id de outra sem o segredo certo não entra', async () => {
+      const admin = await login(app, 'admin');
+      await configureCompany(admin);
+
+      const other = await createOtherTenant();
+      // Tenta usar a conta da primeira lojamestre (o client_id não é segredo) com um segredo chutado.
+      const guess = await other.post('/api/fiscal/settings/test-credentials').send({ acbr_client_id: CLIENT_ID, acbr_client_secret: 'chute' });
+      expect(guess.status).toBe(422);
+      expect(guess.body.error).toMatch(/recusou as credenciais/);
+      const saved = await other.put('/api/fiscal/settings').send({ ...otherCompany, acbr_client_secret: 'chute' });
+      expect(saved.status).toBe(200);
+      acbr.reset();
+      const sync = await other.post('/api/fiscal/settings/sync');
+      expect(sync.status).toBe(502);
+      expect(sync.body.error).toMatch(/recusou as credenciais/);
+      // Nenhuma chamada saiu com o token já guardado da primeira lojamestre.
+      expect(acbr.calls()).toEqual([]);
+
+      // Com a conta dela, tudo vai para a conta dela.
+      acbr.registerClient('conta-outra', 'segredo-da-outra');
+      const ok = await other
+        .post('/api/fiscal/settings/test-credentials')
+        .send({ acbr_client_id: 'conta-outra', acbr_client_secret: 'segredo-da-outra' });
+      expect(ok.status).toBe(200);
+      const own = await other
+        .put('/api/fiscal/settings')
+        .send({ ...otherCompany, acbr_client_id: 'conta-outra', acbr_client_secret: 'segredo-da-outra' });
+      expect(own.status).toBe(200);
+      acbr.route('PUT', '/empresas/12345678000195', { status: 200, body: {} });
+      acbr.route('PUT', '/empresas/12345678000195/nfe', { status: 200, body: {} });
+      acbr.route('PUT', '/empresas/12345678000195/nfce', { status: 200, body: {} });
+      acbr.route('PUT', '/empresas/12345678000195/distnfe', { status: 200, body: {} });
+      expect((await other.post('/api/fiscal/settings/sync')).status).toBe(200);
+      expect(new Set(acbr.calls().map((c) => c.account))).toEqual(new Set(['conta-outra']));
+
+      // E a primeira continua com a dela.
+      acbr.reset();
+      acbr.route('GET', '/nfe/sefaz/status', { status: 200, body: { codigo_status: 107, motivo_status: 'Servico em Operacao' } });
+      expect((await admin.get('/api/fiscal/settings/sefaz-status')).body.status.online).toBe(true);
+      expect(acbr.calls().map((c) => c.account)).toEqual([CLIENT_ID]);
+    });
+
+    it('trocar de conta exige o segredo da nova e pede para reenviar empresa e certificado', async () => {
+      const admin = await login(app, 'admin');
+      await configureCompany(admin);
+
+      const noSecret = await admin.put('/api/fiscal/settings').send({ ...companyBody, acbr_client_id: 'conta-nova', acbr_client_secret: '' });
+      expect(noSecret.status).toBe(400);
+      expect(noSecret.body.error).toMatch(/client_secret/);
+
+      // Mesmo client_id com o segredo em branco mantém o salvo (e não precisa reenviar nada).
+      const same = await admin.put('/api/fiscal/settings').send({ ...companyBody, acbr_client_secret: '' });
+      expect(same.status).toBe(200);
+      expect(same.body.settings).toMatchObject({ acbr_client_secret_hint: '••••eiro' });
+      expect(same.body.settings.company_synced_at).toBeTruthy();
+      expect(same.body.settings.certificate_valid_until).toBeTruthy();
+
+      const moved = await admin
+        .put('/api/fiscal/settings')
+        .send({ ...companyBody, acbr_client_id: 'conta-nova', acbr_client_secret: 'segredo-novo-1234' });
+      expect(moved.status).toBe(200);
+      expect(moved.body.settings).toMatchObject({
+        acbr_client_id: 'conta-nova',
+        acbr_client_secret_hint: '••••1234',
+        company_synced_at: null,
+        certificate_valid_until: null,
+      });
+
+      // Sem conta, a emissão avisa onde configurar.
+      const removed = await admin.put('/api/fiscal/settings').send({ ...companyBody, acbr_client_id: '', acbr_client_secret: '' });
+      expect(removed.body.settings.acbr_configured).toBe(false);
+      const sync = await admin.post('/api/fiscal/settings/sync');
+      expect(sync.status).toBe(422);
+      expect(sync.body.error).toMatch(/client_id e o client_secret da loja/);
     });
   });
 

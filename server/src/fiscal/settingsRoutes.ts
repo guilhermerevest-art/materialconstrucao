@@ -6,7 +6,7 @@ import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { isValidCnpj, stripDocument } from '../lib/document.js';
 import { optionalText } from '../lib/validation.js';
-import { AcbrError, describeAcbrError, resolveCredentials, type AcbrClient } from './acbr.js';
+import { AcbrClient, AcbrError, describeAcbrError, resolveCredentials } from './acbr.js';
 import {
   acbrClientFor,
   FISCAL_SETTINGS_COLUMNS,
@@ -194,7 +194,6 @@ async function pushCompany(client: AcbrClient, s: FiscalSettingsRow & { cnpj: st
 export function fiscalSettingsRouter(ctx: AppContext) {
   const router = Router();
   router.use(requireAdmin);
-  const platform = Boolean(ctx.config.acbr.platform);
 
   function toPublic(row: FiscalSettingsRow | null) {
     const s = row ?? { ...EMPTY_SETTINGS, tenant_id: 0, updated_at: null };
@@ -204,10 +203,8 @@ export function fiscalSettingsRouter(ctx: AppContext) {
       acbr_client_secret_hint: hint(acbr_client_secret),
       nfce_csc_hint: hint(nfce_csc),
       has_nfce_csc: Boolean(nfce_csc),
-      /** Há conta da ACBr API na plataforma: a loja não precisa ter a sua. */
-      acbr_platform_available: platform,
-      /** Tem credenciais (próprias ou da plataforma) para falar com a ACBr API. */
-      acbr_configured: Boolean(resolveCredentials(ctx.config.acbr, row)),
+      /** A lojamestre já informou a conta dela na ACBr API. */
+      acbr_configured: Boolean(resolveCredentials(row)),
     };
   }
 
@@ -222,9 +219,14 @@ export function fiscalSettingsRouter(ctx: AppContext) {
     const body = settingsSchema.parse(req.body);
     const row = await withSession(ctx.pool, me, async (db) => {
       const current = await loadFiscalSettings(db, me.tenant_id);
-      // Conta própria: o segredo em branco mantém o salvo; sem client_id, volta para a conta da plataforma.
-      const clientSecret = body.acbr_client_id ? (body.acbr_client_secret ?? current?.acbr_client_secret ?? null) : null;
-      if (body.acbr_client_id && !clientSecret) throw new HttpError(400, 'Informe o client_secret da ACBr API.');
+      // Cada lojamestre tem a sua conta. Segredo em branco mantém o salvo, mas só para o mesmo client_id:
+      // outro client_id é outra conta e precisa do segredo dela.
+      const sameAccount = Boolean(current?.acbr_client_id) && current?.acbr_client_id === body.acbr_client_id;
+      const clientSecret = body.acbr_client_id
+        ? (body.acbr_client_secret ?? (sameAccount ? current?.acbr_client_secret : null) ?? null)
+        : null;
+      if (body.acbr_client_id && !clientSecret) throw new HttpError(400, 'Informe o client_secret da conta da ACBr API.');
+      if (!body.acbr_client_id && body.acbr_client_secret) throw new HttpError(400, 'Informe o client_id da conta da ACBr API.');
       const csc = body.nfce_csc_id ? (body.nfce_csc ?? current?.nfce_csc ?? null) : null;
       if (body.nfce_csc_id && !csc) throw new HttpError(400, 'Informe o código do CSC da NFC-e.');
 
@@ -249,6 +251,8 @@ export function fiscalSettingsRouter(ctx: AppContext) {
 
       // Outro ambiente ou outro CNPJ: a sequência de NSU da distribuição recomeça.
       const resetInbound = current && (current.environment !== body.environment || current.cnpj !== body.cnpj);
+      // Outra conta ou outro CNPJ: empresa e certificado ficaram na conta antiga e precisam ser enviados de novo.
+      const resetCompany = current && (current.cnpj !== body.cnpj || current.acbr_client_id !== body.acbr_client_id);
       const values = {
         ...body,
         acbr_client_secret: clientSecret,
@@ -261,7 +265,7 @@ export function fiscalSettingsRouter(ctx: AppContext) {
          on conflict (tenant_id) do update
             set ${columns.map((c) => `${c} = excluded.${c}`).join(', ')},
                 ${resetInbound ? 'inbound_last_nsu = 0, inbound_synced_at = null,' : ''}
-                ${current && current.cnpj !== body.cnpj ? 'company_synced_at = null, certificate_subject = null, certificate_valid_until = null, certificate_uploaded_at = null,' : ''}
+                ${resetCompany ? 'company_synced_at = null, certificate_subject = null, certificate_valid_until = null, certificate_uploaded_at = null,' : ''}
                 updated_at = now()
          returning ${FISCAL_SETTINGS_COLUMNS}`,
         [me.tenant_id, ...columns.map((c) => values[c])],
@@ -269,6 +273,28 @@ export function fiscalSettingsRouter(ctx: AppContext) {
       return rows[0]!;
     });
     res.json({ settings: toPublic(row) });
+  });
+
+  /**
+   * Confere a conta da ACBr API pedindo um token. Aceita o que está no formulário
+   * (antes de salvar); segredo em branco usa o já salvo, se for o mesmo client_id.
+   */
+  router.post('/test-credentials', async (req, res) => {
+    const me = currentUser(req);
+    const body = z
+      .object({ acbr_client_id: optionalText(200), acbr_client_secret: keepSecret(500) })
+      .parse(req.body ?? {});
+    const current = await withSession(ctx.pool, me, (db) => loadFiscalSettings(db, me.tenant_id));
+    const clientId = body.acbr_client_id ?? current?.acbr_client_id ?? null;
+    const clientSecret =
+      body.acbr_client_secret ?? (clientId && clientId === current?.acbr_client_id ? current.acbr_client_secret : null);
+    if (!clientId || !clientSecret) throw new HttpError(400, 'Informe o client_id e o client_secret da conta da ACBr API.');
+    try {
+      await new AcbrClient(ctx.config.acbr, { clientId, clientSecret }).verify();
+    } catch (err) {
+      throw new HttpError(422, describeAcbrError(err), 'ACBR_FAILED');
+    }
+    res.json({ ok: true });
   });
 
   /** Envia o cadastro para a ACBr API. A tela chama logo depois de salvar. */

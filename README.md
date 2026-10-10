@@ -178,8 +178,6 @@ do build. Deploys de preview não mexem no banco.
    - `JWT_SECRET` (aleatório, 32+ caracteres; diferente do local)
    - `APP_TIMEZONE=America/Sao_Paulo`
    - `DATABASE_CA_CERT`, se usar `verify-ca`/`verify-full`
-   - `ACBR_CLIENT_ID` e `ACBR_CLIENT_SECRET`, para a emissão fiscal pela conta da plataforma (opcional;
-     veja [Módulo fiscal](#módulo-fiscal-acbr-api))
 3. **Região:** a função roda em `gru1` (São Paulo). Cada tela faz algumas consultas
    ao banco em sequência; se a VPS estiver em outra região, troque `regions` no
    `vercel.json` pela região mais próxima dela.
@@ -220,9 +218,10 @@ gera o DANFE; aqui fica só o que a tela precisa para listar, numerar e chegar a
 
 ### Configuração
 
-1. **Conta na ACBr API.** Defina `ACBR_CLIENT_ID` e `ACBR_CLIENT_SECRET` (conta da plataforma) na
-   Vercel, ou deixe cada lojamestre informar a própria conta em Configurações → Fiscal. O
-   `client_secret` nunca volta para o navegador.
+1. **Conta da lojamestre na ACBr API.** Cada lojamestre tem a sua conta (com as próprias empresas,
+   certificados, notas e créditos): o admin dela informa o `client_id` e o `client_secret` em
+   Configurações → Fiscal e usa **Testar conta**. O `client_secret` nunca volta para o navegador. Não há
+   conta da plataforma: sem conta informada, a emissão e o monitor daquela lojamestre ficam bloqueados.
 2. **Administração → Configurações → aba Fiscal**: CNPJ (o botão de busca preenche pela Receita),
    razão social, IE, regime tributário (CRT), endereço com código IBGE (o CEP preenche), série e
    próximo número da NF-e e da NFC-e, CSC da NFC-e e o ambiente. **Salvar** grava e já envia o
@@ -232,8 +231,9 @@ gera o DANFE; aqui fica só o que a tela precisa para listar, numerar e chegar a
 4. Comece em **homologação**: as notas saem com "SEM VALOR FISCAL" e não contam na SEFAZ. Ao passar
    para produção, acerte o próximo número para continuar a sequência que a empresa já usa.
 
-Na conta da plataforma, o CNPJ é o que separa as empresas dentro da ACBr API: o mesmo CNPJ não pode
-estar em duas lojamestres.
+O token OAuth2 fica em cache por conta, e a chave do cache inclui o `client_secret` (em hash): uma
+lojamestre que digite o `client_id` de outra não aproveita o token dela. Trocar de conta exige o segredo
+da conta nova e pede para reenviar a empresa e o certificado, que ficaram na conta antiga.
 
 ### Cadastros
 

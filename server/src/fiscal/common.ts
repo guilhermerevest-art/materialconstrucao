@@ -46,14 +46,14 @@ export async function loadFiscalSettings(db: Db, tenantId: number): Promise<Fisc
 export const modelPath = (model: InvoiceModel) => (model === 55 ? 'nfe' : 'nfce');
 export const modelLabel = (model: InvoiceModel) => (model === 55 ? 'NF-e' : 'NFC-e');
 
-/** Cliente da ACBr API com a conta da lojamestre (ou a da plataforma). */
+/** Cliente da ACBr API com a conta da própria lojamestre. */
 export function acbrClientFor(ctx: AppContext, settings: FiscalSettingsRow | null, isAdmin: boolean): AcbrClient {
-  const credentials = resolveCredentials(ctx.config.acbr, settings);
+  const credentials = resolveCredentials(settings);
   if (!credentials) {
     throw new HttpError(
       422,
       isAdmin
-        ? 'A ACBr API ainda não está configurada. Informe o client_id e o client_secret em Configurações → Fiscal.'
+        ? 'A conta da ACBr API ainda não foi informada. Preencha o client_id e o client_secret da loja em Configurações → Fiscal.'
         : 'A emissão fiscal ainda não foi configurada. Peça ao administrador para preencher Configurações → Fiscal.',
       'FISCAL_NOT_CONFIGURED',
     );

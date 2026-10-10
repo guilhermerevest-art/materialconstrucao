@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   CheckCircle2,
+  PlugZap,
   FileKey2,
   Inbox,
   KeyRound,
@@ -317,6 +318,16 @@ export function FiscalSettingsForm() {
     onError: (err) => setError(errorMessage(err, 'Não foi possível salvar.')),
   });
 
+  const testAccount = useMutation({
+    mutationFn: () =>
+      api<{ ok: true }>('/fiscal/settings/test-credentials', {
+        method: 'POST',
+        body: { acbr_client_id: form?.acbr_client_id ?? '', acbr_client_secret: form?.acbr_client_secret ?? '' },
+      }),
+    onSuccess: () => toast.success('Conta da ACBr API conferida: as credenciais estão certas.'),
+    onError: (err) => toast.error(errorMessage(err, 'Não foi possível conferir a conta.')),
+  });
+
   const sefazStatus = useMutation({
     mutationFn: () =>
       api<{ status: { online: boolean; code: number | null; message: string | null; average_seconds: number | null } }>(
@@ -365,27 +376,7 @@ export function FiscalSettingsForm() {
     );
   }
 
-  const ownAccount = Boolean(data.acbr_client_id) || !data.acbr_platform_available;
-  const accountFields = (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Client ID" htmlFor="acbr-client-id" hint={data.acbr_platform_available ? 'Em branco, usa a conta da plataforma.' : undefined}>
-        <Input id="acbr-client-id" value={form.acbr_client_id} onChange={set('acbr_client_id')} autoComplete="off" />
-      </Field>
-      <Field
-        label="Client Secret"
-        htmlFor="acbr-client-secret"
-        hint={data.acbr_client_secret_hint ? `Salvo (${data.acbr_client_secret_hint}). Preencha só para trocar.` : 'Do painel da ACBr API.'}
-      >
-        <Input
-          id="acbr-client-secret"
-          type="password"
-          autoComplete="off"
-          value={form.acbr_client_secret}
-          onChange={set('acbr_client_secret')}
-        />
-      </Field>
-    </div>
-  );
+  const accountChanged = Boolean(data.acbr_client_id) && form.acbr_client_id.trim() !== data.acbr_client_id;
 
   return (
     <div className="grid gap-6">
@@ -394,28 +385,59 @@ export function FiscalSettingsForm() {
 
         <Section
           icon={<KeyRound />}
-          title="Conta na ACBr API"
-          description="A ACBr API transmite as notas para a SEFAZ, guarda o XML e gera o DANFE."
+          title="Conta da loja na ACBr API"
+          description="Cada lojamestre tem a sua conta na ACBr API, com as próprias empresas, notas e créditos. O client_id e o client_secret ficam no painel da ACBr API."
         >
-          {data.acbr_platform_available ? (
-            <>
-              <p className="text-sm">
-                {data.acbr_client_id ? (
-                  <>Usando a <strong>conta própria</strong> informada abaixo.</>
-                ) : (
-                  <>Usando a <strong>conta da plataforma</strong>. Basta preencher a empresa e enviar o certificado.</>
-                )}
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">Situação:</span>
+            {data.acbr_configured ? (
+              <Badge variant="success">Conta informada</Badge>
+            ) : (
+              <Badge variant="quote">Sem conta: a emissão fica bloqueada</Badge>
+            )}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Client ID" htmlFor="acbr-client-id">
+              <Input id="acbr-client-id" value={form.acbr_client_id} onChange={set('acbr_client_id')} autoComplete="off" />
+            </Field>
+            <Field
+              label="Client Secret"
+              htmlFor="acbr-client-secret"
+              hint={
+                data.acbr_client_secret_hint && !accountChanged
+                  ? `Salvo (${data.acbr_client_secret_hint}). Preencha só para trocar.`
+                  : 'Não volta para a tela depois de salvo.'
+              }
+            >
+              <Input
+                id="acbr-client-secret"
+                type="password"
+                autoComplete="off"
+                value={form.acbr_client_secret}
+                onChange={set('acbr_client_secret')}
+              />
+            </Field>
+          </div>
+          {accountChanged && (
+            <Alert variant="danger" icon={<TriangleAlert />} title="Trocando de conta">
+              <p>
+                Informe o client_secret da nova conta. Depois de salvar, a empresa vai para a conta nova e o certificado
+                precisa ser enviado de novo.
               </p>
-              <details className="rounded-lg border border-border" open={ownAccount}>
-                <summary className="cursor-pointer px-4 py-3 text-sm font-medium select-none">
-                  Usar uma conta própria da ACBr API (avançado)
-                </summary>
-                <div className="border-t border-border p-4">{accountFields}</div>
-              </details>
-            </>
-          ) : (
-            accountFields
+            </Alert>
           )}
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => testAccount.mutate()}
+              loading={testAccount.isPending}
+              disabled={!form.acbr_client_id.trim() || (!form.acbr_client_secret && (!data.acbr_client_secret_hint || accountChanged))}
+            >
+              {!testAccount.isPending && <PlugZap />}
+              Testar conta
+            </Button>
+          </div>
         </Section>
 
         <Section icon={<Building2 />} title="Dados da empresa" description="Saem como emitente em todas as notas.">

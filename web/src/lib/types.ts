@@ -249,7 +249,7 @@ export type FiscalSettings = FiscalAddress & {
   environment: FiscalEnvironment;
   acbr_client_id: string | null;
   acbr_client_secret_hint: string | null;
-  acbr_platform_available: boolean;
+  /** A lojamestre já informou a conta dela na ACBr API (cada uma tem a sua). */
   acbr_configured: boolean;
   cnpj: string | null;
   legal_name: string | null;

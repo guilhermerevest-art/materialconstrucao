@@ -25,8 +25,6 @@ const envSchema = z.object({
   EVOLUTION_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   ACBR_API_URL: z.string().optional(),
   ACBR_AUTH_URL: z.string().optional(),
-  ACBR_CLIENT_ID: z.string().optional(),
-  ACBR_CLIENT_SECRET: z.string().optional(),
   ACBR_SCOPE: z.string().optional(),
   ACBR_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   WEB_DIST_DIR: z.string().optional(),
@@ -53,7 +51,7 @@ export type Config = {
   evolutionServer?: { url: string; token: string };
   /** Pasta com o build do frontend, servida pela API em produção. */
   webDistDir?: string;
-  /** ACBr API (emissão de NF-e/NFC-e e distribuição DF-e). */
+  /** ACBr API (emissão de NF-e/NFC-e e distribuição DF-e). A conta é de cada lojamestre. */
   acbr: AcbrConfig;
 };
 
@@ -64,11 +62,6 @@ export type AcbrConfig = {
   authUrl: string;
   scope: string;
   timeoutMs: number;
-  /**
-   * Conta da plataforma. Com ela, cada lojamestre só cadastra a empresa e o
-   * certificado; sem ela, cada uma informa a própria conta em Configurações.
-   */
-  platform?: { clientId: string; clientSecret: string };
 };
 
 export const ACBR_DEFAULT_URL = 'https://prod.acbr.api.br';
@@ -106,8 +99,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('EVOLUTION_API_URL precisa começar com http:// ou https://');
   }
   const onVercel = Boolean(e.VERCEL);
-  const acbrClientId = e.ACBR_CLIENT_ID?.trim();
-  const acbrClientSecret = e.ACBR_CLIENT_SECRET?.trim();
   return {
     env: e.NODE_ENV,
     port: e.PORT,
@@ -125,7 +116,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       authUrl: parseHttpUrl(e.ACBR_AUTH_URL, 'ACBR_AUTH_URL', ACBR_DEFAULT_AUTH_URL),
       scope: e.ACBR_SCOPE?.trim() || ACBR_DEFAULT_SCOPE,
       timeoutMs: e.ACBR_TIMEOUT_MS,
-      platform: acbrClientId && acbrClientSecret ? { clientId: acbrClientId, clientSecret: acbrClientSecret } : undefined,
     },
   };
 }

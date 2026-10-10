@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { AcbrConfig } from '../config.js';
 
 /** Conta da ACBr API (OAuth2 client_credentials). */
@@ -20,8 +21,9 @@ export class AcbrError extends Error {
 }
 
 /**
- * Tokens por conta. Na Vercel a instância da função é reaproveitada entre
- * requisições, então o cache evita pedir um token novo a cada nota.
+ * Tokens por conta (cada lojamestre tem a sua). Na Vercel a instância da função
+ * é reaproveitada entre requisições, então o cache evita pedir um token novo a
+ * cada nota.
  */
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
@@ -88,12 +90,19 @@ export class AcbrClient {
     private readonly credentials: AcbrCredentials,
   ) {}
 
+  /**
+   * O segredo entra na chave (como hash): o client_id sozinho não é segredo, e
+   * uma lojamestre que digitasse o client_id de outra com qualquer senha levaria
+   * o token já guardado da outra conta.
+   */
   private get cacheKey() {
-    return `${this.config.authUrl}|${this.credentials.clientId}|${this.config.scope}`;
+    return createHash('sha256')
+      .update([this.config.authUrl, this.config.scope, this.credentials.clientId, this.credentials.clientSecret].join('\0'))
+      .digest('hex');
   }
 
-  private async token(): Promise<string> {
-    const cached = tokenCache.get(this.cacheKey);
+  private async token(fresh = false): Promise<string> {
+    const cached = fresh ? undefined : tokenCache.get(this.cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.token;
 
     const res = await timedFetch(
@@ -157,6 +166,11 @@ export class AcbrClient {
     return (text ? JSON.parse(text) : null) as T;
   }
 
+  /** Confere as credenciais pedindo um token novo (ignora o cache). */
+  async verify() {
+    await this.token(true);
+  }
+
   /** PDF (DANFE) ou XML: devolve o arquivo como veio. */
   async download(path: string, query?: Query) {
     const res = await this.send('GET', path, { query, accept: '*/*' });
@@ -167,15 +181,12 @@ export class AcbrClient {
   }
 }
 
-/** A conta própria da lojamestre vale mais que a da plataforma. */
+/** Conta da lojamestre na ACBr API (Configurações → Fiscal). */
 export function resolveCredentials(
-  config: AcbrConfig,
   settings: { acbr_client_id: string | null; acbr_client_secret: string | null } | null | undefined,
 ): AcbrCredentials | null {
-  if (settings?.acbr_client_id && settings.acbr_client_secret) {
-    return { clientId: settings.acbr_client_id, clientSecret: settings.acbr_client_secret };
-  }
-  return config.platform ?? null;
+  if (!settings?.acbr_client_id || !settings.acbr_client_secret) return null;
+  return { clientId: settings.acbr_client_id, clientSecret: settings.acbr_client_secret };
 }
 
 /** Motivo da falha em linguagem de balcão, apontando onde corrigir. */

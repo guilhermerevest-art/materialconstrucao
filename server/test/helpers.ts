@@ -182,10 +182,14 @@ type FakeResponse = { status: number; body: unknown; contentType?: string };
 /**
  * ACBr API de mentira: token OAuth2 em /token e rotas configuráveis. Registra as
  * requisições (o corpo do token chega em form-urlencoded e fica como texto).
+ * Cada conta (client_id + client_secret) recebe tokens próprios; a API registra
+ * em `account` de qual conta era o token de cada chamada.
  */
 export async function startFakeAcbr() {
-  const requests: CapturedRequest[] = [];
+  const requests: (CapturedRequest & { account?: string })[] = [];
   const routes = new Map<string, FakeResponse | ((req: CapturedRequest) => FakeResponse)>();
+  const clients = new Map<string, string>();
+  const tokens = new Map<string, string>();
   let tokenCount = 0;
 
   const server = createServer((req, res) => {
@@ -200,14 +204,30 @@ export async function startFakeAcbr() {
         // form-urlencoded do token
       }
       const url = req.url ?? '';
-      const captured = { method: req.method ?? '', url, headers: req.headers, body };
+      const captured: CapturedRequest & { account?: string } = { method: req.method ?? '', url, headers: req.headers, body };
       requests.push(captured);
       if (req.method === 'POST' && url === '/token') {
+        const form = new URLSearchParams(raw);
+        const clientId = form.get('client_id') ?? '';
+        if (!clients.has(clientId) || clients.get(clientId) !== form.get('client_secret')) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid_client', error_description: 'Invalid client or Invalid client credentials' }));
+          return;
+        }
         tokenCount += 1;
+        const token = `token-${clientId}-${tokenCount}`;
+        tokens.set(token, clientId);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ access_token: `token-${tokenCount}`, expires_in: 3600, token_type: 'Bearer' }));
+        res.end(JSON.stringify({ access_token: token, expires_in: 3600, token_type: 'Bearer' }));
         return;
       }
+      const account = tokens.get(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
+      if (!account) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Token inválido' } }));
+        return;
+      }
+      captured.account = account;
       const path = url.split('?')[0];
       const route = routes.get(`${req.method} ${url}`) ?? routes.get(`${req.method} ${path}`);
       const reply = typeof route === 'function' ? route(captured) : (route ?? { status: 404, body: { error: { message: 'Rota não simulada' } } });
@@ -226,6 +246,10 @@ export async function startFakeAcbr() {
     requests,
     /** Requisições à API (sem as de token). */
     calls: () => requests.filter((r) => r.url !== '/token'),
+    /** Cria uma conta na ACBr API (cada lojamestre tem a sua). */
+    registerClient(clientId: string, clientSecret: string) {
+      clients.set(clientId, clientSecret);
+    },
     route(method: string, path: string, reply: FakeResponse | ((req: CapturedRequest) => FakeResponse)) {
       routes.set(`${method} ${path}`, reply);
     },

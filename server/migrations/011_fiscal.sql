@@ -82,7 +82,8 @@ create table fiscal_settings (
   tenant_id                 bigint primary key references tenants (id),
   -- Ambiente da SEFAZ das notas emitidas e da distribuição DF-e.
   environment               text not null default 'homologacao',
-  -- Conta própria na ACBr API. Em branco, vale a conta da plataforma (ACBR_CLIENT_ID).
+  -- Conta da lojamestre na ACBr API: cada uma tem a sua, com as próprias empresas,
+  -- certificados, notas e créditos. O segredo nunca volta inteiro para o navegador.
   acbr_client_id            text,
   acbr_client_secret        text,
   cnpj                      text,
@@ -143,10 +144,6 @@ create table fiscal_settings (
     and nfce_next_number between 1 and 999999999
   )
 );
--- Na conta da plataforma, o CNPJ é o que separa as empresas dentro da ACBr API:
--- duas lojamestres com o mesmo CNPJ veriam as notas uma da outra.
-create unique index fiscal_settings_cnpj_key on fiscal_settings (cnpj);
-
 alter table fiscal_settings enable row level security;
 alter table fiscal_settings force  row level security;
 create policy fiscal_settings_tenant on fiscal_settings
