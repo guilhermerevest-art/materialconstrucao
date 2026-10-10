@@ -237,10 +237,32 @@ export function StockEntryPage() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    await loadXml(() => file.text());
+  }
+
+  // Veio do monitor de notas recebidas: o XML vem da ACBr API, sem precisar baixar e importar.
+  const fromInbound = params.get('nota');
+  const inboundLoaded = useRef(false);
+  useEffect(() => {
+    if (!fromInbound || inboundLoaded.current) return;
+    inboundLoaded.current = true;
+    void loadXml(async () => {
+      const res = await fetch(`/api/fiscal/inbound/${encodeURIComponent(fromInbound)}/xml`, { credentials: 'same-origin' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? 'Não foi possível baixar o XML da nota.');
+      }
+      return res.text();
+    });
+    // loadXml usa o estado do momento; roda uma vez ao abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromInbound]);
+
+  async function loadXml(read: () => Promise<string>) {
     setError(null);
     setReading(true);
     try {
-      const parsed = parseNfeXml(await file.text());
+      const parsed = parseNfeXml(await read());
       const { matches } = await api<{ matches: Match[] }>('/stock/entries/match', {
         method: 'POST',
         body: {

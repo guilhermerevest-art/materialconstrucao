@@ -244,6 +244,10 @@ venda; aqui é a logística de quando e como a mercadoria sai.
 - **Cancelar pedido** desmarca as entregas agendadas; com entrega já feita, o cancelamento é bloqueado até
   estornar as entregas (a mercadoria precisa voltar).
 - Atrasadas (agendadas para antes de hoje e não feitas) aparecem em destaque na agenda.
+- **Nota fiscal:** com a NF-e (ou NFC-e) do pedido autorizada, o número aparece na agenda, no comprovante (abre o
+  DANFE) e em cada entrega do romaneio. Opcional, em **Configurações → Vendas → Entregas**: **exigir nota fiscal
+  para o caminhão sair** bloqueia "Saiu para entrega" enquanto algum pedido do romaneio está sem nota
+  autorizada (a mensagem diz quais).
 - O vendedor vê as entregas e romaneios da própria loja; o admin, de todas. Veículos são cadastrados pelo admin.
 
 ## Separação e conferência
@@ -540,6 +544,9 @@ Primeiro chega o **resumo**. Dar **ciência da operação** libera a nota comple
 próxima busca; depois o admin confirma, desconhece ou registra "operação não realizada"
 (com justificativa). Também dá para ligar a ciência automática. Notas canceladas pelo emitente ficam
 marcadas.
+
+Nota completa: **Dar entrada** abre a entrada de estoque já com os itens, a conversão de unidade e as
+duplicatas da nota, sem baixar e importar o XML. Depois de lançada, a nota mostra **Entrada nº** no monitor.
 
 ### Limitações desta versão
 

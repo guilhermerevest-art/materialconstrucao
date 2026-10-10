@@ -3,6 +3,7 @@ import { ArrowLeft, Camera, CheckCircle2, MapPin, MessageCircle, Undo2, X } from
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { InvoiceLink } from '@/components/InvoiceLink';
 import { ReasonDialog } from '@/components/ReasonDialog';
 import { EmptyState } from '@/components/shared';
 import { SignaturePad, type SignaturePadHandle } from '@/components/SignaturePad';
@@ -192,6 +193,7 @@ export function DeliveryProofPage() {
             {formatOrderNumber(delivery.order_id)}
           </Link>
           <Badge variant={STATUS_VARIANT[delivery.status]}>{STATUS_LABEL[delivery.status]}</Badge>
+          {delivery.invoice && <InvoiceLink invoice={delivery.invoice} />}
         </p>
         <h1 className="text-2xl font-bold tracking-tight">{delivery.client_name}</h1>
         {delivery.scheduled_date && (

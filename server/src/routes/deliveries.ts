@@ -10,7 +10,7 @@ import {
   lockOrderForDelivery,
 } from '../deliveries/queries.js';
 import { HttpError } from '../errors.js';
-import { todayIn } from '../lib/format.js';
+import { formatOrderNumber, todayIn } from '../lib/format.js';
 import { optionalQueryId, optionalText, parseId } from '../lib/validation.js';
 import { renderRoutePdf, type RoutePdfData } from '../pdf/routePdf.js';
 
@@ -109,6 +109,12 @@ const DELIVERY_COLUMNS = `d.id, d.order_id, d.store_id, s.name as store_name, d.
   d.created_at, d.completed_at, d.cancelled_at,
   (d.signature_data is not null) as has_signature, (d.photo_data is not null) as has_photo,
   c.name as client_name, c.whatsapp as client_whatsapp, cu.name as created_by_name, co.name as completed_by_name,
+  -- Nota fiscal autorizada do pedido (a mais recente), para o romaneio e o comprovante.
+  (select json_build_object('id', fd.id, 'model', fd.model, 'number', fd.number, 'series', fd.series, 'access_key', fd.access_key)
+     from fiscal_documents fd
+    where fd.order_id = d.order_id and fd.status = 'autorizado'
+    order by fd.authorized_at desc nulls last, fd.id desc
+    limit 1) as invoice,
   coalesce((
     select json_agg(json_build_object('order_item_id', di.order_item_id, 'product_id', i.product_id,
                                       'product_code', i.product_code, 'product_name', i.product_name,
@@ -413,6 +419,26 @@ export function deliveriesRouter(ctx: AppContext) {
       const { rows } = await db.query<{ status: string }>('select status from delivery_routes where id = $1 for update', [id]);
       if (!rows[0]) throw new HttpError(404, ROUTE_NOT_FOUND);
       if (rows[0].status !== 'open') throw new HttpError(409, 'Este romaneio já saiu.');
+      const { rows: settings } = await db.query<{ delivery_requires_invoice: boolean }>(
+        'select delivery_requires_invoice from settings limit 1',
+      );
+      if (settings[0]?.delivery_requires_invoice) {
+        const { rows: missing } = await db.query<{ order_id: number }>(
+          `select distinct d.order_id from deliveries d
+            where d.route_id = $1 and d.status = 'scheduled'
+              and not exists (select 1 from fiscal_documents fd where fd.order_id = d.order_id and fd.status = 'autorizado')
+            order by d.order_id`,
+          [id],
+        );
+        if (missing.length) {
+          const orders = missing.map((m) => formatOrderNumber(m.order_id)).join(', ');
+          throw new HttpError(
+            409,
+            `${missing.length === 1 ? 'O pedido' : 'Os pedidos'} ${orders} ainda não ${missing.length === 1 ? 'tem' : 'têm'} nota fiscal autorizada. Emita a nota antes de o caminhão sair.`,
+            'INVOICE_REQUIRED',
+          );
+        }
+      }
       const { rowCount } = await db.query(`update deliveries set status = 'in_route' where route_id = $1 and status = 'scheduled'`, [id]);
       if (!rowCount) throw new HttpError(409, 'O romaneio está sem entregas.');
       await db.query(`update delivery_routes set status = 'in_route', departed_at = now() where id = $1`, [id]);
@@ -464,6 +490,30 @@ export function deliveriesRouter(ctx: AppContext) {
     res.setHeader('Content-Disposition', `inline; filename="romaneio-${id}.pdf"`);
     res.setHeader('Cache-Control', 'no-store');
     res.send(pdf);
+  });
+
+  // ---- Configuração
+
+  router.get('/delivery-settings', async (req, res) => {
+    const { rows } = await queryAs<{ delivery_requires_invoice: boolean }>(
+      pool,
+      currentUser(req),
+      'select delivery_requires_invoice from settings limit 1',
+    );
+    res.json({ settings: { requires_invoice: Boolean(rows[0]?.delivery_requires_invoice) } });
+  });
+
+  router.put('/delivery-settings', requireAdmin, async (req, res) => {
+    const me = currentUser(req);
+    const body = z.object({ requires_invoice: z.boolean() }).parse(req.body);
+    await queryAs(
+      pool,
+      me,
+      `insert into settings (tenant_id, delivery_requires_invoice) values ($1, $2)
+       on conflict (tenant_id) do update set delivery_requires_invoice = excluded.delivery_requires_invoice, updated_at = now()`,
+      [me.tenant_id, body.requires_invoice],
+    );
+    res.json({ settings: { requires_invoice: body.requires_invoice } });
   });
 
   // ---- Veículos

@@ -578,6 +578,8 @@ export type InboundDocument = {
   manifestation_message: string | null;
   manifested_at: string | null;
   created_at: string;
+  /** Entrada de estoque feita com esta nota (pela chave de acesso). */
+  stock_entry_id: number | null;
 };
 
 export type InboundListMeta = {
@@ -643,6 +645,8 @@ export type Delivery = {
   completed_by_name: string | null;
   items: DeliveryItem[];
   order_notes?: string | null;
+  /** Nota fiscal autorizada do pedido (modelo 55 = NF-e, 65 = NFC-e). */
+  invoice: { id: number; model: number; number: number; series: number; access_key: string | null } | null;
 };
 
 export type OrderDeliveries = { tracking: boolean; items: FulfillmentLine[]; deliveries: Delivery[] };

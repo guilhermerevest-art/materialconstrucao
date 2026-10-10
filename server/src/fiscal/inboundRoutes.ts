@@ -86,9 +86,11 @@ const NOT_FOUND = 'Nota recebida não encontrada.';
 const PAGE = 100;
 const MAX_PAGES = 20;
 
+// stock_entry_id: a nota já deu entrada no estoque (pela chave de acesso).
 const COLUMNS = `id, environment, access_key, nsu, summary, issuer_document, issuer_name, issuer_state_registration,
   nfe_type, amount, protocol, issued_at, authorized_at, cancelled, manifestation, manifestation_status,
-  manifestation_message, manifested_at, created_at, updated_at`;
+  manifestation_message, manifested_at, created_at, updated_at,
+  (select e.id from stock_entries e where e.access_key = fiscal_inbound_documents.access_key limit 1) as stock_entry_id`;
 
 type InboundRow = {
   id: number;

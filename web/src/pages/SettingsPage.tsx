@@ -8,6 +8,7 @@ import { PageHeader, WhatsAppIcon } from '@/components/shared';
 import { FinanceSettingsCard } from '@/components/FinanceSettingsCard';
 import { FiadoSettingsCard } from '@/components/FiadoSettingsCard';
 import { FollowupSettingsCard } from '@/components/FollowupSettingsCard';
+import { DeliverySettingsCard } from '@/components/DeliverySettingsCard';
 import { SalesSettingsCard } from '@/components/SalesSettingsCard';
 import { WhatsAppConnection } from '@/components/WhatsAppConnection';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,7 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="vendas" className="max-w-3xl">
           <SalesSettingsCard />
+          <DeliverySettingsCard />
         </TabsContent>
         <TabsContent value="retomada" className="max-w-3xl">
           <FollowupSettingsCard />

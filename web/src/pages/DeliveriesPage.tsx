@@ -17,6 +17,7 @@ import {
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
+import { InvoiceLink } from '@/components/InvoiceLink';
 import { ReasonDialog } from '@/components/ReasonDialog';
 import { EmptyState, PageHeader } from '@/components/shared';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,7 @@ function DeliveryRow({
           </Link>
           <span className="font-medium">{delivery.client_name}</span>
           <Badge variant={STATUS_VARIANT[delivery.status]}>{STATUS_LABEL[delivery.status]}</Badge>
+          {delivery.invoice && <InvoiceLink invoice={delivery.invoice} />}
           {delivery.period && <Badge>{PERIOD_LABEL[delivery.period]}</Badge>}
           {showDate && delivery.scheduled_date && <span className="text-muted-foreground">{formatDay(delivery.scheduled_date)}</span>}
         </p>
