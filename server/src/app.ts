@@ -19,6 +19,7 @@ import { paymentMethodsRouter } from './routes/paymentMethods.js';
 import { productsRouter } from './routes/products.js';
 import { reportsRouter } from './routes/reports.js';
 import { sectorsRouter } from './routes/sectors.js';
+import { separationRouter } from './routes/separation.js';
 import { settingsRouter } from './routes/settings.js';
 import { stockRouter } from './routes/stock.js';
 import { storesRouter } from './routes/stores.js';
@@ -66,6 +67,7 @@ export function createApp(ctx: AppContext) {
   api.use('/monitor', monitorRouter(ctx));
   api.use('/stock', stockRouter(ctx));
   api.use(deliveriesRouter(ctx));
+  api.use(separationRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));

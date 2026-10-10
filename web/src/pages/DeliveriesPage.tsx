@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   FileSignature,
   FileText,
   MapPin,
@@ -88,6 +89,14 @@ function DeliveryRow({
         )}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row">
+        {delivery.status === 'scheduled' && (
+          <Button asChild variant="ghost" size="sm">
+            <Link to={`/pedidos/${delivery.order_id}/conferencia?entrega=${delivery.id}`}>
+              <ClipboardCheck />
+              Separar
+            </Link>
+          </Button>
+        )}
         {(open || delivery.has_signature || delivery.has_photo) && (
           <Button asChild variant={open ? 'steel' : 'ghost'} size="sm">
             <Link to={`/entregas/${delivery.id}`}>

@@ -198,6 +198,19 @@ venda; aqui é a logística de quando e como a mercadoria sai.
 - Atrasadas (agendadas para antes de hoje e não feitas) aparecem em destaque na agenda.
 - O vendedor vê as entregas e romaneios da própria loja; o admin, de todas. Veículos são cadastrados pelo admin.
 
+## Separação e conferência
+
+Botão **Separação** no pedido confirmado (e **Separar** em cada entrega agendada).
+
+- **Lista de separação (PDF):** o que falta sair do pedido (vendido menos o já entregue) ou só os itens da
+  entrega escolhida, sem preços, com caixa para marcar e linhas para quem separou e quem conferiu.
+- **Conferência:** bipe o código de cada volume (o leitor de código de barras funciona como teclado) ou digite
+  `5*CIM-50` para cinco de uma vez. Código que não é do pedido toca um bipe grave e avisa para deixar o produto
+  de lado; passar da quantidade fica em vermelho. Granel sem etiqueta (areia, brita) se ajusta em +/- ou "Tudo".
+- **Registrar:** a conferência fica no pedido com quem conferiu, quando e o que foi contado. Com divergência,
+  é registrada assim mesmo, com a observação.
+- O código lido é o **código do produto** no cadastro.
+
 ## Fluxo de pedidos e monitores
 
 Depois de confirmado, o pedido pode percorrer etapas (ex.: Aguardando faturamento → Em separação →

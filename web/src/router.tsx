@@ -3,6 +3,7 @@ import { AppLayout } from './components/AppLayout';
 import { Spinner } from './components/ui/misc';
 import { useMe, UserContext } from './lib/auth';
 import { ClientsPage } from './pages/ClientsPage';
+import { ConferencePage } from './pages/ConferencePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
 import { DeliveryProofPage } from './pages/DeliveryProofPage';
@@ -91,6 +92,7 @@ export const router = createBrowserRouter([
       { path: 'pedidos/novo', element: <OrderEditorPage /> },
       { path: 'pedidos/:id', element: <OrderDetailPage /> },
       { path: 'pedidos/:id/editar', element: <OrderEditorPage /> },
+      { path: 'pedidos/:id/conferencia', element: <ConferencePage /> },
       { path: 'clientes', element: <ClientsPage /> },
       { path: 'produtos', element: <ProductsPage /> },
       { path: 'relatorios', element: <ReportsPage /> },

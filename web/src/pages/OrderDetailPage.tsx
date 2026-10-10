@@ -1,5 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Ban, CheckCheck, CheckCircle2, Download, FileCheck2, Pencil, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  Ban,
+  CheckCheck,
+  CheckCircle2,
+  ClipboardCheck,
+  Download,
+  FileCheck2,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
@@ -150,6 +162,14 @@ export function OrderDetailPage() {
                 Converter em pedido
               </Button>
             </>
+          )}
+          {order.status === 'order' && (
+            <Button variant="outline" asChild>
+              <Link to={`/pedidos/${order.id}/conferencia`}>
+                <ClipboardCheck />
+                Separação
+              </Link>
+            </Button>
           )}
           {canCancel && (
             <Button variant="outline" onClick={() => setConfirm('cancel')}>

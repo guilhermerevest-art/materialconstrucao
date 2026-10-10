@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarPlus, FileSignature, PackageCheck, Truck, Undo2 } from 'lucide-react';
+import { CalendarPlus, ClipboardCheck, FileSignature, PackageCheck, Truck, Undo2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
@@ -287,6 +287,14 @@ export function OrderDeliveriesCard({ order }: { order: Order }) {
                 )}
               </div>
               <div className="flex shrink-0 gap-1">
+                {d.status === 'scheduled' && (
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to={`/pedidos/${order.id}/conferencia?entrega=${d.id}`}>
+                      <ClipboardCheck />
+                      Separar
+                    </Link>
+                  </Button>
+                )}
                 {(d.status === 'scheduled' || d.status === 'in_route' || (d.status === 'done' && (d.has_signature || d.has_photo))) && (
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/entregas/${d.id}`}>
