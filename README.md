@@ -232,6 +232,37 @@ do administrador.
 - **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
 - Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
 
+## Registro de alterações e senhas cifradas
+
+**Administração → Registro de alterações** mostra quem mudou o quê e quando, com filtros por período,
+área, usuário e busca, e exportação para CSV. É gravado pelo próprio banco (gatilhos nas tabelas), então
+nenhuma tela ou integração fica de fora, e ninguém altera nem apaga o que foi gravado: nem a aplicação,
+nem o dono do banco (um gatilho recusa alteração, exclusão e `truncate`).
+
+- **Produtos e preços:** cadastro, preço, custo, faixas por quantidade e tabelas de preço. No cadastro do
+  produto, **Histórico de alterações** abre só as dele (cadastro, preço e estoque).
+- **Estoque:** ajuste (inclusive o da contagem aprovada) e transferência, com o motivo.
+- **Pedidos:** cancelamento e exclusão, e desconto acima do limite liberado com a senha de outro (fica
+  quem lançou e quem liberou). Montar e confirmar orçamento é o dia a dia e não entra.
+- **Financeiro:** estorno de recebimento e de pagamento, renegociação de parcela, conta a pagar lançada,
+  alterada ou cancelada, sangria e suprimento do caixa, estorno no fiado.
+- **Notas fiscais:** nota cancelada, numeração inutilizada e mudança na configuração fiscal.
+- **Clientes:** limite de crédito, tabela de preço, vencimento do fiado e exclusão.
+- **Usuários e configurações:** usuário criado, alterado (perfil, loja, desconto máximo, senha trocada) ou
+  excluído; lojas, formas de pagamento e configurações dos módulos. O que o revendedor faz pelo painel
+  aparece como "Suporte (revenda)".
+- **Acesso:** cada entrada no sistema e cada tentativa recusada (senha errada, usuário desativado), com o IP.
+
+Senhas e chaves aparecem só como "informada", "alterada" ou "removida": o valor nunca vai para o registro.
+O registro começa a valer na versão que o criou.
+
+**Senhas de serviços cifradas:** a conta da ACBr API (client_secret), o CSC da NFC-e e a chave da
+EvolutionAPI ficam no banco cifrados com AES-256-GCM, com a chave da variável `SECRETS_KEY` (ou derivada do
+`JWT_SECRET`, se ela não existir). Quem tiver só o banco ou um backup não usa as contas da loja. O
+`db:migrate` cifra as que estavam em texto e, depois de uma troca de chave, cifra de novo com a nova (a
+antiga vai em `SECRETS_KEY_PREVIOUS` até lá). Se o valor não abrir com nenhuma chave, a tela mostra o campo
+vazio para informar de novo.
+
 ## Rotinas e contagem de estoque
 
 Menu **Operação → Rotinas**, desligado de fábrica: o administrador liga na própria tela e já ganha quatro
@@ -502,6 +533,9 @@ do build. Deploys de preview não mexem no banco.
 2. Em **Settings → Environment Variables**, cadastre:
    - `DATABASE_URL` (com `sslmode=require`)
    - `JWT_SECRET` (aleatório, 32+ caracteres; diferente do local)
+   - `SECRETS_KEY` (aleatório, 32+ caracteres): cifra as senhas de serviços no banco. Opcional,
+     mas recomendado: sem ela, a chave sai do `JWT_SECRET`, e trocar o `JWT_SECRET` obriga a
+     informar de novo a conta da ACBr, o CSC e a chave do WhatsApp
    - `APP_TIMEZONE=America/Sao_Paulo`
    - `DATABASE_CA_CERT`, se usar `verify-ca`/`verify-full`
 3. **Região:** a função roda em `gru1` (São Paulo). Cada tela faz algumas consultas

@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Package, Pencil, Percent, Plus, Receipt, Search, Tags, Trash2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { PriceAdjustDialog } from '@/components/PriceAdjustDialog';
 import { emptyPricingForm, ProductPricingTab, pricingToBody, pricingToForm, type PricingForm } from '@/components/ProductPricingTab';
@@ -414,7 +415,17 @@ function ProductFormDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{product ? 'Editar produto' : 'Novo produto'}</DialogTitle>
-          <DialogDescription>O preço vale para todas as lojas. Pedidos já lançados mantêm o preço da época.</DialogDescription>
+          <DialogDescription>
+            O preço vale para todas as lojas. Pedidos já lançados mantêm o preço da época.
+            {product && (
+              <>
+                {' '}
+                <Link to={`/registro-de-alteracoes?produto=${product.id}`} className="font-medium text-primary hover:underline">
+                  Histórico de alterações
+                </Link>
+              </>
+            )}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           {error && <Alert variant="danger" title={error} />}

@@ -1,4 +1,5 @@
 import type { Db } from '../db/pool.js';
+import { openSecret } from './secrets.js';
 
 /** Credenciais da EvolutionAPI salvas em Configurações. */
 export type EvolutionSettings = {
@@ -23,8 +24,9 @@ export async function loadEvolutionSettings(db: Db, tenantId: number): Promise<E
     [tenantId],
   );
   const s = rows[0];
-  if (!s?.evolution_api_url || !s.evolution_instance || !s.evolution_api_token) return null;
-  return { url: s.evolution_api_url.replace(/\/+$/, ''), instance: s.evolution_instance, token: s.evolution_api_token };
+  const token = openSecret(s?.evolution_api_token);
+  if (!s?.evolution_api_url || !s.evolution_instance || !token) return null;
+  return { url: s.evolution_api_url.replace(/\/+$/, ''), instance: s.evolution_instance, token };
 }
 
 export class EvolutionError extends Error {

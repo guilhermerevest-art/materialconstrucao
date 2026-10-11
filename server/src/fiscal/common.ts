@@ -1,6 +1,7 @@
 import type { AppContext } from '../context.js';
 import type { Db } from '../db/pool.js';
 import { HttpError } from '../errors.js';
+import { openSecret } from '../lib/secrets.js';
 import { AcbrClient, resolveCredentials } from './acbr.js';
 import type { FiscalCompany, InvoiceModel } from './invoice.js';
 
@@ -34,13 +35,21 @@ export const FISCAL_SETTINGS_COLUMNS = `tenant_id, environment, acbr_client_id, 
   inbound_last_nsu, inbound_synced_at, certificate_subject, certificate_valid_until, certificate_uploaded_at,
   company_synced_at, updated_at`;
 
+/** A linha como veio do banco, com a conta da ACBr e o CSC abertos (ficam cifrados lá). */
+export function openFiscalRow(row: FiscalSettingsRow): FiscalSettingsRow;
+export function openFiscalRow(row: FiscalSettingsRow | undefined): FiscalSettingsRow | null;
+export function openFiscalRow(row: FiscalSettingsRow | undefined) {
+  if (!row) return null;
+  return { ...row, acbr_client_secret: openSecret(row.acbr_client_secret), nfce_csc: openSecret(row.nfce_csc) };
+}
+
 /** Precisa rodar no contexto da lojamestre: fiscal_settings tem RLS. */
 export async function loadFiscalSettings(db: Db, tenantId: number): Promise<FiscalSettingsRow | null> {
   const { rows } = await db.query<FiscalSettingsRow>(
     `select ${FISCAL_SETTINGS_COLUMNS} from fiscal_settings where tenant_id = $1`,
     [tenantId],
   );
-  return rows[0] ?? null;
+  return openFiscalRow(rows[0]);
 }
 
 export const modelPath = (model: InvoiceModel) => (model === 55 ? 'nfe' : 'nfce');

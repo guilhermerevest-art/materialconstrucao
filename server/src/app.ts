@@ -8,7 +8,9 @@ import { z } from 'zod';
 import { authenticate, requireAdmin } from './auth.js';
 import type { AppContext } from './context.js';
 import { errorHandler } from './errors.js';
+import { initSecrets } from './lib/secrets.js';
 import { fiscalRouter } from './fiscal/index.js';
+import { auditRouter } from './routes/audit.js';
 import { authRouter } from './routes/auth.js';
 import { clientSitesRouter } from './routes/clientSites.js';
 import { clientsRouter } from './routes/clients.js';
@@ -43,6 +45,7 @@ z.config(z.locales.ptBR());
 const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist/', import.meta.url));
 
 export function createApp(ctx: AppContext) {
+  initSecrets({ jwtSecret: ctx.config.jwtSecret, secretsKey: ctx.config.secretsKey, previousKeys: ctx.config.previousSecretsKeys });
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', ctx.config.trustProxy);
@@ -91,6 +94,7 @@ export function createApp(ctx: AppContext) {
   api.use('/fiscal', fiscalRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
   api.use('/users', requireAdmin, usersRouter(ctx));
+  api.use('/audit', requireAdmin, auditRouter(ctx));
   api.use('/settings', requireAdmin, settingsRouter(ctx));
   api.use((_req, res) => {
     res.status(404).json({ error: 'Rota não encontrada.' });

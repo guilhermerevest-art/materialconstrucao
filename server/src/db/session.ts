@@ -32,6 +32,16 @@ export async function setTenantContext(db: pg.PoolClient, tenantId: number) {
   await db.query(`select set_config('app.tenant_id', $1, true)`, [String(tenantId)]);
 }
 
+/** Quem aparece no registro de alterações quando não há usuário da loja (o suporte do revendedor). */
+export async function setAuditActor(db: pg.PoolClient, actor: string) {
+  await db.query(`select set_config('app.audit_actor', $1, true)`, [actor]);
+}
+
+/** Observação gravada junto das alterações desta transação no registro. */
+export async function setAuditNote(db: pg.PoolClient, note: string) {
+  await db.query(`select set_config('app.audit_note', $1, true)`, [note]);
+}
+
 /** Seta as variáveis de RLS para o usuário na conexão atual. */
 async function setSessionContext(db: pg.PoolClient, user: SessionUser) {
   await db.query(

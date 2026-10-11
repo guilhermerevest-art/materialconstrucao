@@ -17,6 +17,7 @@ import type { AppContext } from '../context.js';
 import { setTenantContext, withSession, withTransaction } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { loginLimiter } from '../lib/loginLimiter.js';
+import { recordAccess } from './audit.js';
 import { findTenantByHost } from '../lib/tenantDomain.js';
 
 // Hash dummy: usado quando a combinação (tenant_slug, username) não existe,
@@ -121,8 +122,11 @@ export function authRouter(ctx: AppContext) {
 
     const found = await findLogin(ctx.pool, tenant_slug, username);
     const valid = await verifyPassword(password, found?.password_hash ?? DUMMY_HASH);
+    const failed = (note: string) =>
+      found && recordAccess(ctx.pool, { tenantId: found.tenant_id, userId: found.id, action: 'login_failed', ip: req.ip, note });
     if (!found || !valid) {
       await loginLimiter.fail(ctx.pool, key);
+      await failed('Senha errada.');
       throw new HttpError(401, loginError);
     }
     if (!found.tenant_active) {
@@ -131,10 +135,12 @@ export function authRouter(ctx: AppContext) {
     }
     if (!found.active) {
       await loginLimiter.fail(ctx.pool, key);
+      await failed('Usuário desativado.');
       throw new HttpError(403, 'Este usuário está desativado. Fale com o administrador.');
     }
 
     await loginLimiter.reset(ctx.pool, key);
+    await recordAccess(ctx.pool, { tenantId: found.tenant_id, userId: found.id, action: 'login', ip: req.ip });
     warnIfCookieWillBeDropped(req, ctx.config);
     issueSession(res, ctx.config, found);
     const user = await loadAuthUser(ctx.pool, found.id, found.tenant_id);

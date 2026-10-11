@@ -17,6 +17,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'defina DATABASE_URL'),
   DATABASE_CA_CERT: z.string().optional(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET precisa ter pelo menos 32 caracteres'),
+  SECRETS_KEY: z.string().min(32, 'SECRETS_KEY precisa ter pelo menos 32 caracteres').optional(),
+  SECRETS_KEY_PREVIOUS: z.string().optional(),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   TRUST_PROXY: z.string().optional(),
   APP_TIMEZONE: z.string().default('America/Sao_Paulo'),
@@ -38,6 +40,13 @@ export type Config = {
   /** Certificado (PEM) da CA do Postgres, para sslmode=verify-ca/verify-full. */
   databaseCaCert?: string;
   jwtSecret: string;
+  /**
+   * Chave das senhas de serviços guardadas no banco (ACBr, CSC, EvolutionAPI). Sem ela,
+   * a chave é derivada do JWT_SECRET. As anteriores (SECRETS_KEY_PREVIOUS, separadas
+   * por vírgula) ainda abrem o que foi cifrado antes da troca.
+   */
+  secretsKey?: string;
+  previousSecretsKeys?: string[];
   /** Cookie de sessão só por HTTPS. Padrão: ligado em produção e na Vercel. */
   cookieSecure: boolean;
   /** Repassado para o "trust proxy" do Express. Na Vercel o padrão é confiar no proxy dela. */
@@ -105,6 +114,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: e.DATABASE_URL,
     databaseCaCert: e.DATABASE_CA_CERT || undefined,
     jwtSecret: e.JWT_SECRET,
+    secretsKey: e.SECRETS_KEY || undefined,
+    previousSecretsKeys: e.SECRETS_KEY_PREVIOUS?.split(',').map((k) => k.trim()).filter(Boolean),
     cookieSecure: e.COOKIE_SECURE ? e.COOKIE_SECURE === 'true' : e.NODE_ENV === 'production' || onVercel,
     trustProxy: e.TRUST_PROXY === undefined && onVercel ? true : parseTrustProxy(e.TRUST_PROXY),
     timeZone: e.APP_TIMEZONE,

@@ -17,6 +17,7 @@ import {
   loadEvolutionSettings,
   type EvolutionQrCode,
 } from '../lib/evolution.js';
+import { openSecret, sealSecret } from '../lib/secrets.js';
 
 const settingsSchema = z.object({
   evolution_api_url: z
@@ -60,7 +61,7 @@ async function saveSettings(
             evolution_api_token = excluded.evolution_api_token,
             updated_at = now()
      returning ${SETTINGS_COLUMNS}`,
-    [values.url, values.instance, values.token, tenantId],
+    [values.url, values.instance, sealSecret(values.token), tenantId],
   );
   return rows[0]!;
 }
@@ -77,7 +78,7 @@ export function settingsRouter(ctx: AppContext) {
 
   /** A chave nunca volta inteira para o navegador. */
   function toPublicSettings(row: SettingsRow) {
-    const token = row.evolution_api_token;
+    const token = openSecret(row.evolution_api_token);
     const managed = isManaged(row);
     return {
       // O endereço do servidor da plataforma fica só no servidor.
@@ -116,11 +117,11 @@ export function settingsRouter(ctx: AppContext) {
     const result = await withSession(ctx.pool, me, async (db) => {
       let hasToken = false;
       if (!body.evolution_api_token) {
-        const current = await db.query<{ has_token: boolean }>(
-          'select evolution_api_token is not null as has_token from settings where tenant_id = $1',
+        const current = await db.query<{ evolution_api_token: string | null }>(
+          'select evolution_api_token from settings where tenant_id = $1',
           [me.tenant_id],
         );
-        hasToken = current.rows[0]?.has_token ?? false;
+        hasToken = Boolean(openSecret(current.rows[0]?.evolution_api_token));
         if (!hasToken) throw new HttpError(400, 'Informe a API Key da EvolutionAPI.');
       }
       const { rows } = await db.query<SettingsRow>(
@@ -131,7 +132,7 @@ export function settingsRouter(ctx: AppContext) {
                 updated_at = now()
           where tenant_id = $4
          returning ${SETTINGS_COLUMNS}`,
-        [body.evolution_api_url, body.evolution_instance, body.evolution_api_token ?? null, me.tenant_id],
+        [body.evolution_api_url, body.evolution_instance, sealSecret(body.evolution_api_token), me.tenant_id],
       );
       return rows[0]!;
     });

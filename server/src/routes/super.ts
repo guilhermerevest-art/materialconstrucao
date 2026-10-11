@@ -13,9 +13,12 @@ import {
 } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
-import { setTenantContext, withTransaction } from '../db/session.js';
+import { setAuditActor, setTenantContext, withTransaction } from '../db/session.js';
 import { normalizeDomain } from '../lib/tenantDomain.js';
 import { insertDefaultPaymentMethods } from './paymentMethods.js';
+
+/** Nome no registro de alterações para o que o revendedor faz na lojamestre. */
+const SUPPORT_ACTOR = 'Suporte (revenda)';
 
 const slugSchema = z
   .string()
@@ -159,6 +162,7 @@ export function superRouter(ctx: AppContext) {
       const tenantId = tenant.rows[0]!.id;
       // users e settings têm RLS por lojamestre: o resto roda no contexto da nova.
       await setTenantContext(db, tenantId);
+      await setAuditActor(db, SUPPORT_ACTOR);
 
       // Username precisa ser único no tenant. Como o tenant acabou de ser criado,
       // é sempre único, mas verificamos por segurança.
@@ -213,6 +217,7 @@ export function superRouter(ctx: AppContext) {
     const body = renameAdminSchema.parse(req.body);
     await withTransaction(ctx.pool, async (db) => {
       await setTenantContext(db, body.tenant_id);
+      await setAuditActor(db, SUPPORT_ACTOR);
       const dup = await db.query(
         `select 1 from users where tenant_id = $1 and id <> $2 and lower(username) = $3`,
         [body.tenant_id, body.user_id, body.username],
