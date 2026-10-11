@@ -5,12 +5,14 @@ import type { AppContext } from '../context.js';
 import { withSession } from '../db/session.js';
 import { HttpError } from '../errors.js';
 import { isValidCnpj, stripDocument } from '../lib/document.js';
+import { sealSecret } from '../lib/secrets.js';
 import { optionalText } from '../lib/validation.js';
 import { AcbrClient, AcbrError, describeAcbrError, resolveCredentials } from './acbr.js';
 import {
   acbrClientFor,
   FISCAL_SETTINGS_COLUMNS,
   loadFiscalSettings,
+  openFiscalRow,
   requireCnpj,
   type FiscalSettingsRow,
 } from './common.js';
@@ -255,8 +257,8 @@ export function fiscalSettingsRouter(ctx: AppContext) {
       const resetCompany = current && (current.cnpj !== body.cnpj || current.acbr_client_id !== body.acbr_client_id);
       const values = {
         ...body,
-        acbr_client_secret: clientSecret,
-        nfce_csc: csc,
+        acbr_client_secret: sealSecret(clientSecret),
+        nfce_csc: sealSecret(csc),
       };
       const columns = Object.keys(values) as (keyof typeof values)[];
       const { rows } = await db.query<FiscalSettingsRow>(
@@ -270,7 +272,7 @@ export function fiscalSettingsRouter(ctx: AppContext) {
          returning ${FISCAL_SETTINGS_COLUMNS}`,
         [me.tenant_id, ...columns.map((c) => values[c])],
       );
-      return rows[0]!;
+      return openFiscalRow(rows[0]!);
     });
     res.json({ settings: toPublic(row) });
   });
@@ -317,7 +319,7 @@ export function fiscalSettingsRouter(ctx: AppContext) {
         `update fiscal_settings set company_synced_at = now() where tenant_id = $1 returning ${FISCAL_SETTINGS_COLUMNS}`,
         [me.tenant_id],
       );
-      return rows[0]!;
+      return openFiscalRow(rows[0]!);
     });
     res.json({ settings: toPublic(row) });
   });
@@ -360,7 +362,7 @@ export function fiscalSettingsRouter(ctx: AppContext) {
          returning ${FISCAL_SETTINGS_COLUMNS}`,
         [me.tenant_id, cert?.subject_name ?? null, cert?.not_valid_after ?? null],
       );
-      return rows[0]!;
+      return openFiscalRow(rows[0]!);
     });
     res.json({ settings: toPublic(row) });
   });
@@ -384,7 +386,7 @@ export function fiscalSettingsRouter(ctx: AppContext) {
          returning ${FISCAL_SETTINGS_COLUMNS}`,
         [me.tenant_id],
       );
-      return rows[0]!;
+      return openFiscalRow(rows[0]!);
     });
     res.json({ settings: toPublic(row) });
   });

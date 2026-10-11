@@ -123,6 +123,7 @@ export const router = createBrowserRouter([
           { path: 'contas-a-pagar', lazy: lazyPage(() => import('./pages/PayablesPage').then((m) => m.PayablesPage)) },
           { path: 'configuracoes', lazy: lazyPage(() => import('./pages/SettingsPage').then((m) => m.SettingsPage)) },
           { path: 'implantacao', lazy: lazyPage(() => import('./pages/SetupPage').then((m) => m.SetupPage)) },
+          { path: 'registro-de-alteracoes', lazy: lazyPage(() => import('./pages/AuditPage').then((m) => m.AuditPage)) },
         ],
       },
       { path: '*', element: <NotFoundPage /> },
