@@ -101,6 +101,9 @@ export const router = createBrowserRouter([
       { path: 'contas-a-receber', lazy: lazyPage(() => import('./pages/ReceivablesPage').then((m) => m.ReceivablesPage)) },
       { path: 'fiado', lazy: lazyPage(() => import('./pages/FiadoPage').then((m) => m.FiadoPage)) },
       { path: 'fiado/:clientId', lazy: lazyPage(() => import('./pages/FiadoAccountPage').then((m) => m.FiadoAccountPage)) },
+      { path: 'rotinas', lazy: lazyPage(() => import('./pages/routines/RoutinesPage').then((m) => m.RoutinesPage)) },
+      { path: 'rotinas/execucao/:id', lazy: lazyPage(() => import('./pages/routines/RoutineRunPage').then((m) => m.RoutineRunPage)) },
+      { path: 'rotinas/contagem/:id', lazy: lazyPage(() => import('./pages/routines/StockCountPage').then((m) => m.StockCountPage)) },
       { path: 'fiscal', lazy: lazyPage(() => import('./pages/fiscal/FiscalDocumentsPage').then((m) => m.FiscalDocumentsPage)) },
       {
         element: <RequireAdmin />,

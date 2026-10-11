@@ -119,7 +119,7 @@ que já está configurado e leva direto à tela de cada passo. Tudo é lido do c
 lojas, vendedores, produtos e formas de pagamento (o essencial); WhatsApp; estoque inicial, mínimos e
 fornecedores; fluxo de pedidos, setores e veículos; nota fiscal (empresa, conta da ACBr API, certificado com o
 aviso de vencimento, NCM dos produtos, nota de teste em homologação e produção); financeiro e PIX; fiado; preço
-e comissão. Os módulos desligados e os passos opcionais não contam no progresso. O certificado e as senhas
+e comissão; rotinas e contagem. Os módulos desligados e os passos opcionais não contam no progresso. O certificado e as senhas
 continuam com a loja: a tela só diz se já foram informados.
 
 ## Regras de negócio
@@ -198,7 +198,8 @@ Tudo opcional: sem tabela, faixa ou limite configurado, o pedido usa o preço do
     vendedor); **comissão**; **devoluções** por produto (com o que voltou avariado).
   - **Estoque e compras:** **curva ABC** do período com giro e cobertura em dias; **estoque parado** (com saldo
     e sem venda há 30 a 365 dias, ou nunca vendido) com o valor parado a custo; **estoque valorizado** a custo
-    e a preço; **margem** por produto (venda líquida menos o custo gravado na venda); **compras** por fornecedor.
+    e a preço; **margem** por produto (venda líquida menos o custo gravado na venda); **compras** por fornecedor;
+    **divergências de contagem** (o que a contagem cega achou de diferença, a acurácia e o valor ajustado).
   - **Financeiro:** **inadimplência** de hoje (parcelas e fiado vencidos por faixa: até 30, 31–60, 61–90 e mais
     de 90 dias) e **fluxo de caixa** por dia (entrou, saiu, saldo, vence a receber e a pagar).
 - Estoque valorizado, margem, compras e fluxo de caixa são do administrador; o vendedor vê os da própria loja.
@@ -230,6 +231,34 @@ do administrador.
 - **Transferência entre lojas:** sai de uma e entra na outra no mesmo momento, com as duas pontas no extrato.
 - **Produto sem estoque** (frete, serviço, mão de obra): marque "Não controlar o estoque" no extrato do produto.
 - Tudo fica no **extrato** do produto em cada loja: tipo, quantidade, saldo depois, quem fez, pedido ou nota.
+
+## Rotinas e contagem de estoque
+
+Menu **Operação → Rotinas**, desligado de fábrica: o administrador liga na própria tela e já ganha quatro
+modelos prontos para editar. Quem não liga não vê nada.
+
+- **Checklists com agenda:** **Abertura da loja** (seg. a sáb., até 7h30, com foto da frente da loja), **Fechamento
+  da loja** (até 18h30), **Recebimento de mercadoria** (quando precisar) e **Contagem de estoque** (toda
+  segunda). Cada modelo tem os dias da semana ou um dia do mês, o horário-limite e a loja (ou todas). O item pode
+  ser marcar feito, número, texto ou foto (tirada no celular e reduzida antes de subir), obrigatório ou não.
+- **Hoje:** cada loja vê o que vence no dia (pendente, atrasada, em andamento, feita) e faz no celular: cada item
+  salva na hora, quem marcou fica gravado, e **Concluir** só passa com os obrigatórios. Depois do horário, fica
+  **feita com atraso**. O início do sistema avisa o que está pendente ou atrasado.
+- **O sistema confere o caixa** (com o financeiro ligado): "caixa aberto hoje" só fica cumprido se houver caixa
+  aberto na loja, e "caixas fechados" só quando não sobra nenhum aberto. Sem o financeiro, vale a marcação de
+  quem fez.
+- **Histórico:** por dia e loja, quantas venceram, quantas foram feitas, com atraso e quais ficaram sem fazer.
+- **Contagem cega:** quem conta não vê o saldo do sistema. A contagem do ciclo escolhe os produtos sozinha pela
+  curva ABC de 90 dias (A a cada 7 dias, B a cada 30, C a cada 90; a curva A primeiro e, em cada curva, os que
+  nunca foram contados ou estão há mais tempo sem contar), até o número de itens configurado (20 de fábrica);
+  também dá para montar uma contagem à mão. Busca por código ou código de barras, e cada quantidade salva ao
+  sair do campo.
+- **Esperado = saldo + vendido e ainda não entregue** (pedido com controle de entrega), que continua na loja.
+  O esperado é gravado na hora em que cada item é contado, e o ajuste aprovado é a **diferença** (contado menos
+  esperado): uma venda feita entre a contagem e a conferência não é apagada.
+- **Conferência (administrador):** depois de enviada, mostra esperado, contado, diferença e valor a custo;
+  marque o que ajustar e aprove com um motivo. O ajuste entra no extrato como "Contagem nº X"; o que não for
+  marcado fica como ignorado. Quem criou ou o administrador pode cancelar enquanto está contando.
 
 ## Compras
 

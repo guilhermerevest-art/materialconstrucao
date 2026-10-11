@@ -14,6 +14,8 @@ export type User = {
   max_discount_percent?: number | null;
   /** Fiado (caderneta) ligado na lojamestre. */
   fiado_enabled?: boolean;
+  /** Rotinas e contagem de estoque ligadas na lojamestre. */
+  routines_enabled?: boolean;
 };
 
 export type ManagedUser = User & {
@@ -473,6 +475,7 @@ export type ReportType =
   | 'estoque-valorizado'
   | 'margem'
   | 'compras'
+  | 'divergencias'
   | 'inadimplencia'
   | 'fluxo-de-caixa';
 
@@ -1148,4 +1151,143 @@ export type SetupArea = {
   description: string;
   module: { enabled: boolean; link: string } | null;
   steps: SetupStep[];
+};
+
+export type RoutineFrequency = 'weekly' | 'monthly' | 'on_demand';
+export type RoutineItemKind = 'check' | 'number' | 'text' | 'photo';
+export type RoutineAction = 'cash_open' | 'cash_closed';
+
+export type RoutineTemplateItem = {
+  id?: number;
+  label: string;
+  hint: string | null;
+  kind: RoutineItemKind;
+  required: boolean;
+  action: RoutineAction | null;
+};
+
+export type RoutineTemplate = {
+  id: number;
+  name: string;
+  kind: 'checklist' | 'stock_count';
+  description: string | null;
+  frequency: RoutineFrequency;
+  weekdays: number[];
+  month_day: number | null;
+  /** "07:30" */
+  due_time: string | null;
+  store_id: number | null;
+  active: boolean;
+  items: RoutineTemplateItem[];
+};
+
+export type RoutineStatus = 'pending' | 'overdue' | 'in_progress' | 'done' | 'not_due';
+
+export type RoutineToday = {
+  template_id: number;
+  name: string;
+  kind: 'checklist' | 'stock_count';
+  description: string | null;
+  frequency: RoutineFrequency;
+  due_time: string | null;
+  store_id: number;
+  store_name: string;
+  due_today: boolean;
+  status: RoutineStatus;
+  runs: { id: number; status: 'in_progress' | 'done'; late: boolean; scheduled: boolean; started_at: string; finished_at: string | null; user_name: string }[];
+};
+
+export type StockCountSummary = {
+  id: number;
+  store_id: number;
+  store_name: string;
+  mode: 'cycle' | 'manual';
+  status: 'counting' | 'submitted' | 'reviewed' | 'cancelled';
+  created_at: string;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  user_name: string;
+  items: number;
+  counted: number;
+};
+
+export type RoutineRunItem = {
+  id: number;
+  label: string;
+  hint: string | null;
+  kind: RoutineItemKind;
+  required: boolean;
+  action: RoutineAction | null;
+  checked: boolean;
+  value_number: number | null;
+  value_text: string | null;
+  photo: string | null;
+  done_at: string | null;
+  done_by_name: string | null;
+  /** Item ligado ao caixa: o sistema confere (nulo sem o financeiro). */
+  satisfied: boolean | null;
+};
+
+export type RoutineRun = {
+  id: number;
+  template_id: number;
+  store_id: number;
+  store_name: string;
+  run_date: string;
+  scheduled: boolean;
+  name: string;
+  status: 'in_progress' | 'done';
+  started_at: string;
+  finished_at: string | null;
+  late: boolean;
+  count_id: number | null;
+  notes: string | null;
+  user_name: string;
+  finished_by_name: string | null;
+  kind: 'checklist' | 'stock_count';
+  description: string | null;
+  due_time: string | null;
+  cash: { open_now: boolean; opened_today: boolean; closed_today: boolean } | null;
+  count: { id: number; status: StockCountSummary['status']; items: number; counted: number } | null;
+  items: RoutineRunItem[];
+};
+
+export type StockCountItem = {
+  id: number;
+  product_id: number;
+  product_name: string;
+  product_code: string | null;
+  gtin: string | null;
+  unit: string;
+  abc_class: 'A' | 'B' | 'C' | null;
+  counted_quantity: number | null;
+  counted_at: string | null;
+  counted_by_name: string | null;
+  /** Só o administrador vê, e só depois de enviada. */
+  expected_quantity: number | null;
+  unit_cost: number | null;
+  outcome: 'adjusted' | 'ignored' | null;
+};
+
+export type StockCountDetail = {
+  count: StockCountSummary & {
+    notes: string | null;
+    review_note: string | null;
+    submitted_by_name: string | null;
+    reviewed_by_name: string | null;
+  };
+  items: StockCountItem[];
+  reveal: boolean;
+};
+
+export type RoutineHistoryRow = {
+  template_id: number;
+  name: string;
+  store_id: number;
+  store_name: string;
+  frequency: RoutineFrequency;
+  due: number;
+  done: number;
+  late: number;
+  missed: string[];
 };

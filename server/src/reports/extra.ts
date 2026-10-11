@@ -452,6 +452,46 @@ async function purchases(ctx: ReportContext): Promise<ExtraReport> {
   };
 }
 
+/** Divergências das contagens conferidas no período: o furo (ou a sobra) de estoque em R$. */
+async function countDivergences(ctx: ReportContext): Promise<ExtraReport> {
+  adminOnly(ctx.user);
+  const params: unknown[] = [];
+  const reviewed = period(ctx, params, 'c.reviewed_at');
+  const store = storeWhere(ctx, params, 'c.store_id');
+  const from = `stock_count_items i join stock_counts c on c.id = i.count_id join stores s on s.id = c.store_id
+     where c.status = 'reviewed' and i.counted_quantity is not null and ${reviewed} and ${store}`;
+  const { rows } = await ctx.db.query(
+    `select i.id, c.id as count_id, s.name as store_name, i.product_code as code, i.product_name as name, i.unit,
+            i.expected_quantity as expected, i.counted_quantity as counted,
+            round(i.counted_quantity - i.expected_quantity, 3) as difference, i.unit_cost,
+            round((i.counted_quantity - i.expected_quantity) * coalesce(i.unit_cost, 0), 2) as value, i.outcome, c.reviewed_at
+       from ${from} and abs(i.counted_quantity - i.expected_quantity) >= 0.0005
+      order by abs((i.counted_quantity - i.expected_quantity) * coalesce(i.unit_cost, 0)) desc, i.product_name
+      limit 1000`,
+    params,
+  );
+  const totals = await ctx.db.query<{ counted: number; exact: number; loss: number; surplus: number }>(
+    `select count(*) as counted,
+            count(*) filter (where abs(i.counted_quantity - i.expected_quantity) < 0.0005) as exact,
+            coalesce(sum((i.counted_quantity - i.expected_quantity) * coalesce(i.unit_cost, 0))
+                     filter (where i.outcome = 'adjusted' and i.counted_quantity < i.expected_quantity), 0) as loss,
+            coalesce(sum((i.counted_quantity - i.expected_quantity) * coalesce(i.unit_cost, 0))
+                     filter (where i.outcome = 'adjusted' and i.counted_quantity > i.expected_quantity), 0) as surplus
+       from ${from}`,
+    params,
+  );
+  const t = totals.rows[0]!;
+  return {
+    rows,
+    metrics: [
+      { label: 'Produtos contados', value: t.counted, format: 'number' },
+      { label: 'Acurácia (sem diferença)', value: t.counted ? round((100 * t.exact) / t.counted, 1) : 0, format: 'percent' },
+      { label: 'Falta ajustada', value: round(t.loss), format: 'money' },
+      { label: 'Sobra ajustada', value: round(t.surplus), format: 'money' },
+    ],
+  };
+}
+
 export const EXTRA_REPORTS: Record<string, (ctx: ReportContext) => Promise<ExtraReport>> = {
   comissao: commission,
   conversao: conversion,
@@ -463,4 +503,5 @@ export const EXTRA_REPORTS: Record<string, (ctx: ReportContext) => Promise<Extra
   'fluxo-de-caixa': cashFlow,
   margem: margin,
   compras: purchases,
+  divergencias: countDivergences,
 };

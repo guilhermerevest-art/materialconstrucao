@@ -145,9 +145,9 @@ describeDb('comissão e relatórios novos', () => {
 
     // Parcela à vista vencida há 45 dias e uma compra no fiado vencida há 100.
     const order = await sell(seller, [{ product_id: f.products.areia, quantity: 1 }], { payment_method_id: cash });
-    await adminPool.query(`update receivables set due_date = current_date - 45 where order_id = $1`, [order.id]);
+    await adminPool.query(`update receivables set due_date = (now() at time zone 'America/Sao_Paulo')::date - 45 where order_id = $1`, [order.id]);
     const fiadoOrder = await sell(seller, [{ product_id: f.products.cimento, quantity: 2 }], { payment_method_id: fiado });
-    await adminPool.query(`update fiado_entries set due_date = current_date - 100 where order_id = $1`, [fiadoOrder.id]);
+    await adminPool.query(`update fiado_entries set due_date = (now() at time zone 'America/Sao_Paulo')::date - 100 where order_id = $1`, [fiadoOrder.id]);
     const late = await report(admin, 'inadimplencia');
     expect(late.rows).toHaveLength(1);
     expect(late.rows[0]).toMatchObject({ name: 'Maria da Silva', total_amount: 222.8, d60: 145, d90plus: 77.8, fiado: 77.8, days_late: 100 });

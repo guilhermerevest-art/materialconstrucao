@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CheckCheck, ListChecks, MessageCircleReply, Plus } from 'lucide-react';
+import { ArrowRight, CheckCheck, ClipboardCheck, ListChecks, MessageCircleReply, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EmptyState, StatusBadge } from '@/components/shared';
@@ -12,7 +12,7 @@ import { useUser } from '@/lib/auth';
 import { formatDateTime, formatMoney, formatOrderNumber } from '@/lib/format';
 import { useDocumentTitle } from '@/lib/hooks';
 import { requiredSteps, useSetup } from '@/lib/setup';
-import type { Dashboard } from '@/lib/types';
+import type { Dashboard, RoutineToday, StockCountSummary } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const today = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
@@ -24,6 +24,41 @@ function Metric({ label, value, detail, className }: { label: string; value: Rea
       <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums">{value}</p>
       {detail && <p className="mt-0.5 text-sm font-medium text-muted-foreground tabular-nums">{detail}</p>}
     </div>
+  );
+}
+
+/** Rotinas de hoje que faltam (e as contagens esperando o admin conferir). */
+function RoutinesBanner() {
+  const user = useUser();
+  const query = useQuery({
+    queryKey: ['routines', 'today', ''],
+    queryFn: () => api<{ items: RoutineToday[]; counts: StockCountSummary[] }>('/routines/today'),
+  });
+  if (!query.data) return null;
+  const due = query.data.items.filter((i) => i.due_today && i.status !== 'done');
+  const overdue = due.filter((i) => i.status === 'overdue').length;
+  const toReview = user.role === 'admin' ? query.data.counts.filter((c) => c.status === 'submitted').length : 0;
+  if (!due.length && !toReview) return null;
+  const parts = [
+    due.length ? `${due.length} ${due.length === 1 ? 'rotina pendente' : 'rotinas pendentes'}` : null,
+    overdue ? `${overdue} ${overdue === 1 ? 'atrasada' : 'atrasadas'}` : null,
+    toReview ? `${toReview} ${toReview === 1 ? 'contagem para conferir' : 'contagens para conferir'}` : null,
+  ].filter(Boolean);
+  return (
+    <Link
+      to="/rotinas"
+      className={cn(
+        'flex items-center gap-3 rounded-lg border px-5 py-3 hover:border-primary/50',
+        overdue ? 'border-destructive/30 bg-destructive-soft text-destructive' : 'border-border bg-card',
+      )}
+    >
+      <ClipboardCheck className="size-5 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 text-sm">
+        <strong className="font-semibold">Hoje: {parts.join(' · ')}</strong>
+        {due[0] && <span className="hidden text-muted-foreground sm:inline"> · {due.map((i) => i.name).slice(0, 3).join(', ')}</span>}
+      </span>
+      <ArrowRight className="size-4 shrink-0" aria-hidden />
+    </Link>
   );
 }
 
@@ -144,6 +179,8 @@ export function DashboardPage() {
           <ArrowRight className="size-4 shrink-0" aria-hidden />
         </Link>
       )}
+
+      {user.routines_enabled && <RoutinesBanner />}
 
       {isAdmin && <SetupBanner />}
 

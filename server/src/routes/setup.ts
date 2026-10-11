@@ -25,7 +25,9 @@ type Count =
   | 'vehicles'
   | 'price_lists'
   | 'users_with_commission'
-  | 'homologation_invoices';
+  | 'homologation_invoices'
+  | 'recent_routines'
+  | 'reviewed_counts';
 
 type Step = {
   key: string;
@@ -83,7 +85,9 @@ export function setupRouter(ctx: AppContext) {
            (select count(*) from vehicles where active) as vehicles,
            (select count(*) from price_lists where active) as price_lists,
            (select count(*) from users where commission_percent is not null) as users_with_commission,
-           (select count(*) from fiscal_documents where environment = 'homologacao' and status = 'autorizado') as homologation_invoices`,
+           (select count(*) from fiscal_documents where environment = 'homologacao' and status = 'autorizado') as homologation_invoices,
+           (select count(*) from routine_runs where status = 'done' and run_date > current_date - 7) as recent_routines,
+           (select count(*) from stock_counts where status = 'reviewed') as reviewed_counts`,
       );
       const c = rows[0] as Record<Count, number>;
       const { rows: settingsRows } = await db.query<{
@@ -94,8 +98,9 @@ export function setupRouter(ctx: AppContext) {
         default_markup_percent: number | null;
         default_commission_percent: number | null;
         evolution: boolean;
+        routines_enabled: boolean;
       }>(
-        `select finance_enabled, fiado_enabled, pix_key, max_discount_percent, default_markup_percent, default_commission_percent,
+        `select finance_enabled, fiado_enabled, routines_enabled, pix_key, max_discount_percent, default_markup_percent, default_commission_percent,
                 (evolution_api_url is not null and evolution_instance is not null and evolution_api_token is not null) as evolution
            from settings limit 1`,
       );
@@ -269,6 +274,32 @@ export function setupRouter(ctx: AppContext) {
               detail: c.vehicles ? plural(c.vehicles, 'veículo', 'veículos') : null,
               link: '/entregas',
               action: 'Abrir entregas',
+            }),
+          ],
+        },
+        {
+          key: 'rotinas',
+          title: 'Rotinas e contagem de estoque',
+          description: 'Checklists de abertura, fechamento e recebimento, e a contagem cega do estoque com ajuste aprovado.',
+          module: { enabled: Boolean(s?.routines_enabled), link: '/rotinas' },
+          steps: [
+            step({
+              key: 'checklists',
+              title: 'Abertura e fechamento feitos pelo sistema',
+              description: 'A equipe marca no celular; atrasos e dias sem rotina aparecem no histórico.',
+              status: done(c.recent_routines > 0),
+              detail: c.recent_routines ? plural(c.recent_routines, 'rotina feita na semana', 'rotinas feitas na semana') : null,
+              link: '/rotinas',
+              action: 'Abrir rotinas',
+            }),
+            step({
+              key: 'contagem',
+              title: 'Primeira contagem conferida',
+              description: 'Conte uma parte do estoque por semana: a diferença aprovada vira ajuste e entra no relatório de divergências.',
+              status: done(c.reviewed_counts > 0),
+              detail: c.reviewed_counts ? plural(c.reviewed_counts, 'contagem conferida', 'contagens conferidas') : null,
+              link: '/rotinas?aba=contagens',
+              action: 'Contar agora',
             }),
           ],
         },
