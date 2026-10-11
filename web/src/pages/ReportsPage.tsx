@@ -341,6 +341,40 @@ const REPORTS: ReportDef[] = [
     ],
   },
   {
+    type: 'divergencias',
+    group: 'estoque',
+    label: 'Divergências de contagem',
+    description:
+      'Produtos das contagens cegas conferidas no período com diferença entre o esperado (saldo + vendido ainda não entregue) e o contado, e o valor a custo.',
+    adminOnly: true,
+    bar: null,
+    columns: [
+      countColumn('Contagem', 'count_id'),
+      textColumn('Loja', 'store_name'),
+      codeColumn,
+      nameColumn('Produto'),
+      quantityColumn('Esperado', 'expected'),
+      quantityColumn('Contado', 'counted'),
+      {
+        label: 'Diferença',
+        render: (row) => (
+          <span className={cn('font-semibold', num(row, 'difference') < 0 ? 'text-destructive' : 'text-success')}>
+            {num(row, 'difference') > 0 ? '+' : ''}
+            {formatQuantity(num(row, 'difference'))}
+          </span>
+        ),
+        csv: (row) => decimal(row.difference),
+        numeric: true,
+      },
+      moneyColumn('Valor', 'value', true),
+      {
+        label: 'Situação',
+        render: (row) => (row.outcome === 'adjusted' ? 'Ajustado' : 'Mantido'),
+        csv: (row) => (row.outcome === 'adjusted' ? 'Ajustado' : 'Mantido'),
+      },
+    ],
+  },
+  {
     type: 'inadimplencia',
     group: 'financeiro',
     label: 'Inadimplência',

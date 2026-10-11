@@ -18,7 +18,7 @@ import {
 } from './ui/dropdown-menu';
 
 /** Módulo opcional que precisa estar ligado para o item aparecer. */
-type NavFlag = 'finance' | 'fiado';
+type NavFlag = 'finance' | 'fiado' | 'routines';
 type NavItem = { to: string; label: string; end?: boolean; flag?: NavFlag; adminOnly?: boolean };
 type NavGroup = { label: string; items: NavItem[]; adminOnly?: boolean };
 
@@ -36,6 +36,8 @@ const NAV: (NavItem | NavGroup)[] = [
       { to: '/fiscal', label: 'Notas fiscais' },
       { to: '/entregas', label: 'Entregas' },
       { to: '/estoque', label: 'Estoque' },
+      // Admin vê sempre: a tela é onde ele liga as rotinas.
+      { to: '/rotinas', label: 'Rotinas', flag: 'routines' },
       { to: '/compras', label: 'Compras', adminOnly: true },
     ],
   },
@@ -101,7 +103,12 @@ export function AppLayout() {
   // Itens de módulo opcional (financeiro, fiado) só aparecem com o módulo ligado; grupo vazio some.
   const flagOn = (item: NavItem) =>
     (!item.adminOnly || isAdmin) &&
-    (!item.flag || (item.flag === 'finance' ? Boolean(user.finance_enabled) : Boolean(user.fiado_enabled)));
+    (!item.flag ||
+      (item.flag === 'finance'
+        ? Boolean(user.finance_enabled)
+        : item.flag === 'fiado'
+          ? Boolean(user.fiado_enabled)
+          : Boolean(user.routines_enabled) || isAdmin));
   const nav = NAV.flatMap((entry): (NavItem | NavGroup)[] => {
     if (!isGroup(entry)) return flagOn(entry) ? [entry] : [];
     if (entry.adminOnly && !isAdmin) return [];

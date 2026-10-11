@@ -39,7 +39,7 @@ describeDb('implantação', () => {
       return { areas, step: (key: string) => steps.get(key)! };
     };
     let { areas, step } = await read();
-    expect(areas.map((a) => a.key)).toEqual(['essencial', 'estoque', 'fluxo', 'fiscal', 'financeiro', 'fiado', 'preco']);
+    expect(areas.map((a) => a.key)).toEqual(['essencial', 'estoque', 'fluxo', 'rotinas', 'fiscal', 'financeiro', 'fiado', 'preco']);
     expect(step('essencial.lojas')).toMatchObject({ status: 'done', detail: '2 lojas' });
     expect(step('essencial.vendedores')).toMatchObject({ status: 'done', detail: '2 vendedores ativos' });
     expect(step('essencial.produtos').status).toBe('done');

@@ -26,6 +26,7 @@ import { paymentMethodsRouter } from './routes/paymentMethods.js';
 import { productsRouter } from './routes/products.js';
 import { purchasesRouter } from './routes/purchases.js';
 import { reportsRouter } from './routes/reports.js';
+import { routinesRouter } from './routes/routines.js';
 import { sectorsRouter } from './routes/sectors.js';
 import { separationRouter } from './routes/separation.js';
 import { settingsRouter } from './routes/settings.js';
@@ -85,6 +86,7 @@ export function createApp(ctx: AppContext) {
   api.use(purchasesRouter(ctx));
   api.use(payablesRouter(ctx));
   api.use(setupRouter(ctx));
+  api.use(routinesRouter(ctx));
   api.use('/workflows', requireAdmin, workflowsRouter(ctx));
   api.use('/fiscal', fiscalRouter(ctx));
   api.use('/stores', requireAdmin, storesRouter(ctx));
